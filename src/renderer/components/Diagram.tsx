@@ -1,0 +1,177 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  ReactFlow,
+  ReactFlowProvider,
+  Background,
+  Controls,
+  ControlButton,
+  MiniMap,
+  useNodesState,
+  useEdgesState,
+  useReactFlow,
+  MarkerType
+} from '@xyflow/react';
+import type { Edge, Node } from '@xyflow/react';
+import dagre from 'dagre';
+import { toPng } from 'html-to-image';
+import type { DiagramPayload, TableSchema } from '@shared/schema';
+import TableNode, { type TableNodeType } from './TableNode';
+
+const NODE_WIDTH = 280;
+const ROW_HEIGHT = 28;
+const HEADER_HEIGHT = 40;
+
+const nodeTypes = { table: TableNode };
+
+type Props = { payload: DiagramPayload; onBack: () => void };
+
+export default function Diagram(props: Props) {
+  return (
+    <ReactFlowProvider>
+      <DiagramInner {...props} />
+    </ReactFlowProvider>
+  );
+}
+
+function DiagramInner({ payload, onBack }: Props) {
+  const flowRef = useRef<HTMLDivElement>(null);
+  const { fitView } = useReactFlow();
+  const [snap, setSnap] = useState(true);
+
+  const { initialNodes, initialEdges } = useMemo(() => buildGraph(payload), [payload]);
+  const [nodes, setNodes, onNodesChange] = useNodesState<TableNodeType>(initialNodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(initialEdges);
+
+  useEffect(() => {
+    setNodes(initialNodes);
+    setEdges(initialEdges);
+    const id = requestAnimationFrame(() => fitView({ padding: 0.2 }));
+    return () => cancelAnimationFrame(id);
+  }, [initialNodes, initialEdges, setNodes, setEdges, fitView]);
+
+  const exportPng = useCallback(async () => {
+    if (!flowRef.current) return;
+    const container = flowRef.current.querySelector('.react-flow') as HTMLElement | null;
+    if (!container) return;
+
+    fitView({ padding: 0.1, duration: 0 });
+    await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+
+    const dataUrl = await toPng(container, {
+      backgroundColor: '#ffffff',
+      pixelRatio: 2,
+      filter: (n) => {
+        if (!(n instanceof HTMLElement)) return true;
+        const cls = n.classList;
+        return (
+          !cls.contains('react-flow__minimap') &&
+          !cls.contains('react-flow__controls') &&
+          !cls.contains('react-flow__panel') &&
+          !cls.contains('react-flow__attribution')
+        );
+      }
+    });
+    const link = document.createElement('a');
+    link.download = `${payload.root.schema ?? 'schema'}.${payload.root.name}.png`;
+    link.href = dataUrl;
+    link.click();
+  }, [fitView, payload.root]);
+
+  return (
+    <div className="diagram-wrap">
+      <div className="diagram-toolbar">
+        <button onClick={onBack} className="btn-link">← Back</button>
+        <span className="title">
+          {payload.root.schema ? `${payload.root.schema}.` : ''}
+          {payload.root.name}
+        </span>
+        <button onClick={exportPng}>Export PNG</button>
+      </div>
+      <div ref={flowRef} className="diagram">
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          nodeTypes={nodeTypes}
+          fitView
+          snapToGrid={snap}
+          snapGrid={[20, 20]}
+          proOptions={{ hideAttribution: true }}
+        >
+          <Background />
+          <Controls>
+            <ControlButton
+              onClick={() => setSnap((s) => !s)}
+              title={snap ? 'Snap to grid: on' : 'Snap to grid: off'}
+              className={snap ? 'snap-on' : ''}
+            >
+              <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <path d="M2 6h12M2 10h12M6 2v12M10 2v12" />
+              </svg>
+            </ControlButton>
+          </Controls>
+          <MiniMap pannable zoomable />
+        </ReactFlow>
+      </div>
+    </div>
+  );
+}
+
+function buildGraph(payload: DiagramPayload): { initialNodes: TableNodeType[]; initialEdges: Edge[] } {
+  const all: TableSchema[] = [payload.root, ...payload.neighbors];
+  const seen = new Map<string, TableSchema>();
+  for (const t of all) {
+    const key = `${t.schema ?? ''}.${t.name}`;
+    if (!seen.has(key)) seen.set(key, t);
+  }
+
+  const g = new dagre.graphlib.Graph();
+  g.setGraph({ rankdir: 'LR', nodesep: 60, ranksep: 120 });
+  g.setDefaultEdgeLabel(() => ({}));
+
+  for (const [key, t] of seen) {
+    g.setNode(key, { width: NODE_WIDTH, height: HEADER_HEIGHT + t.columns.length * ROW_HEIGHT });
+  }
+
+  const edges: Edge[] = [];
+  let edgeId = 0;
+  for (const [key, t] of seen) {
+    for (const fk of t.foreignKeys) {
+      const target = `${fk.refSchema ?? ''}.${fk.refTable}`;
+      if (!seen.has(target)) continue;
+      g.setEdge(key, target);
+      edges.push({
+        id: `e${edgeId++}`,
+        source: key,
+        target,
+        sourceHandle: `${fk.columns[0]}-r`,
+        targetHandle: `${fk.refColumns[0]}-l`,
+        markerEnd: { type: MarkerType.ArrowClosed },
+        label: fk.columns.length > 1 ? `(${fk.columns.join(', ')})` : undefined
+      });
+    }
+  }
+
+  dagre.layout(g);
+
+  const nodes: TableNodeType[] = [...seen.entries()].map(([key, t]) => {
+    const pos = g.node(key);
+    const fkColumns = new Set<string>();
+    for (const fk of t.foreignKeys) for (const c of fk.columns) fkColumns.add(c);
+    return {
+      id: key,
+      type: 'table',
+      position: { x: pos.x - NODE_WIDTH / 2, y: pos.y - (HEADER_HEIGHT + t.columns.length * ROW_HEIGHT) / 2 },
+      data: {
+        schema: t.schema,
+        name: t.name,
+        columns: t.columns,
+        fkColumns,
+        isRoot: t === payload.root
+      }
+    };
+  });
+
+  return { initialNodes: nodes, initialEdges: edges };
+}

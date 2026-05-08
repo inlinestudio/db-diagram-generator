@@ -1,0 +1,78 @@
+{
+  "name": "db-diagram-generator",
+  "version": "0.1.0",
+  "description": "Native desktop app that connects to a database, picks a table, and renders an ER diagram with FK neighbors.",
+  "main": "out/main/index.js",
+  "author": "",
+  "license": "MIT",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
+    "typecheck:web": "tsc --noEmit -p tsconfig.web.json",
+    "typecheck": "npm run typecheck:node && npm run typecheck:web",
+    "package": "npm run build && electron-builder --config",
+    "package:mac": "npm run build && electron-builder --mac --config",
+    "package:win": "npm run build && electron-builder --win --config",
+    "package:linux": "npm run build && electron-builder --linux --config",
+    "package:all": "npm run build && electron-builder -mwl --config",
+    "postinstall": "electron-builder install-app-deps"
+  },
+  "dependencies": {
+    "@xyflow/react": "^12.3.5",
+    "better-sqlite3": "^11.5.0",
+    "dagre": "^0.8.5",
+    "html-to-image": "1.11.11",
+    "html2canvas-pro": "^2.0.2",
+    "mssql": "^11.0.1",
+    "mysql2": "^3.11.4",
+    "pg": "^8.13.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/dagre": "^0.7.52",
+    "@types/node": "^22.9.0",
+    "@types/pg": "^8.11.10",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.3",
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8",
+    "electron-vite": "^2.3.0",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11"
+  },
+  "build": {
+    "appId": "com.kristoftischler.dbdiagramgenerator",
+    "productName": "DB Diagram Generator",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "zip"
+      ]
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Development"
+    }
+  }
+}
