@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.1.0](https://github.com/inlinestudio/db-diagram-generator/compare/v1.0.0...v1.1.0) (2026-05-09)
+
+
+### Features
+
+* auto update ([787a9d1](https://github.com/inlinestudio/db-diagram-generator/commit/787a9d1f0790bb5bb89150ac7bdba43803ebc17d))
+* load whole db on connect, move table selector to gridview ([192212b](https://github.com/inlinestudio/db-diagram-generator/commit/192212b9681f2394b3137fdbce8c5e5bfa040ec0))
+
 ## 1.0.0 (2026-05-09)
 
 
