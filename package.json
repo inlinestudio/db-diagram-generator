@@ -34,6 +34,9 @@
     "react-dom": "^19.0",
     "ssh2": "^1.17.0"
   },
+  "overrides": {
+    "cpu-features": "file:../../stubs/cpu-features"
+  },
   "devDependencies": {
     "@types/dagre": "^0.7.52",
     "@types/node": "^25.0",

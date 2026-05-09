@@ -1,0 +1,7 @@
+{
+  "name": "cpu-features",
+  "version": "0.0.0-stub",
+  "description": "Empty stub replacing the real cpu-features (nan-based, breaks on Electron 42 V8 ABI). ssh2 falls back to pure-JS crypto when cpu-features is empty.",
+  "main": "index.js",
+  "license": "MIT"
+}
