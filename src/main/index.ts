@@ -12,6 +12,9 @@ function createWindow() {
     width: 1280,
     height: 820,
     show: false,
+    icon: process.platform === 'win32'
+      ? join(__dirname, '../../build/icon.ico')
+      : join(__dirname, '../../build/icon.png'),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -35,6 +38,10 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  if (process.platform === 'darwin' && app.dock) {
+    app.dock.setIcon(join(__dirname, '../../build/icon.png'));
+  }
+
   ipcMain.handle(IPC.connect, async (_e, cfg: ConnectionConfig) => {
     try {
       await connect(cfg);
