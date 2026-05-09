@@ -38,7 +38,7 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
-  if (process.platform === 'darwin' && app.dock) {
+  if (process.platform === 'darwin' && app.dock && isDev) {
     app.dock.setIcon(join(__dirname, '../../build/icon.png'));
   }
 
