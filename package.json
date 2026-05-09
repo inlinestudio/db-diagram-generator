@@ -3,7 +3,10 @@
   "version": "1.0.2",
   "description": "Native desktop app that connects to a database, picks a table, and renders an ER diagram with FK neighbors.",
   "main": "out/main/index.js",
-  "author": "",
+  "author": {
+    "name": "Inline Studio",
+    "email": "office@inlinestudio.hu"
+  },
   "license": "MIT",
   "scripts": {
     "dev": "electron-vite dev",
@@ -12,11 +15,11 @@
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
-    "package": "npm run build && electron-builder --config",
-    "package:mac": "npm run build && electron-builder --mac --config",
-    "package:win": "npm run build && electron-builder --win --config",
-    "package:linux": "npm run build && electron-builder --linux --config",
-    "package:all": "npm run build && electron-builder -mwl --config",
+    "package": "npm run build && electron-builder --config --publish never",
+    "package:mac": "npm run build && electron-builder --mac --config --publish never",
+    "package:win": "npm run build && electron-builder --win --config --publish never",
+    "package:linux": "npm run build && electron-builder --linux --config --publish never",
+    "package:all": "npm run build && electron-builder -mwl --config --publish never",
     "postinstall": "electron-builder install-app-deps && node node_modules/electron/install.js"
   },
   "dependencies": {
