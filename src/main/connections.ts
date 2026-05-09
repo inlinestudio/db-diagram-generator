@@ -10,6 +10,13 @@ type StoredEntry = {
   config: StoredConfig;
 };
 
+type StoredSsh = {
+  host: string;
+  port: number;
+  user: string;
+  encryptedPassword: string | null;
+};
+
 type StoredConfig =
   | {
       dialect: 'postgres' | 'mysql' | 'mssql';
@@ -19,6 +26,7 @@ type StoredConfig =
       database: string;
       ssl: boolean;
       encryptedPassword: string | null;
+      ssh: StoredSsh | null;
     }
   | { dialect: 'sqlite'; file: string }
   | { dialect: 'demo' };
@@ -33,6 +41,7 @@ export type SavedConnectionMeta = {
   database?: string;
   file?: string;
   ssl?: boolean;
+  ssh?: { host: string; port: number; user: string };
 };
 
 let cache: StoredEntry[] | null = null;
@@ -82,7 +91,11 @@ export async function list(): Promise<SavedConnectionMeta[]> {
     user: 'user' in e.config ? e.config.user : undefined,
     database: 'database' in e.config ? e.config.database : undefined,
     file: 'file' in e.config ? e.config.file : undefined,
-    ssl: 'ssl' in e.config ? e.config.ssl : undefined
+    ssl: 'ssl' in e.config ? e.config.ssl : undefined,
+    ssh:
+      'ssh' in e.config && e.config.ssh
+        ? { host: e.config.ssh.host, port: e.config.ssh.port, user: e.config.ssh.user }
+        : undefined
   }));
 }
 
@@ -101,6 +114,20 @@ export async function save(name: string, cfg: ConnectionConfig): Promise<string>
       ensureSecureBackend();
       encryptedPassword = safeStorage.encryptString(cfg.password).toString('base64');
     }
+    let storedSsh: StoredSsh | null = null;
+    if (cfg.ssh) {
+      let encSshPw: string | null = null;
+      if (cfg.ssh.password) {
+        ensureSecureBackend();
+        encSshPw = safeStorage.encryptString(cfg.ssh.password).toString('base64');
+      }
+      storedSsh = {
+        host: cfg.ssh.host,
+        port: cfg.ssh.port,
+        user: cfg.ssh.user,
+        encryptedPassword: encSshPw
+      };
+    }
     stored = {
       dialect: cfg.dialect,
       host: cfg.host,
@@ -108,7 +135,8 @@ export async function save(name: string, cfg: ConnectionConfig): Promise<string>
       user: cfg.user,
       database: cfg.database,
       ssl: cfg.ssl ?? false,
-      encryptedPassword
+      encryptedPassword,
+      ssh: storedSsh
     };
   }
 
@@ -140,6 +168,16 @@ export async function loadConfig(id: string): Promise<ConnectionConfig> {
     }
     password = safeStorage.decryptString(Buffer.from(c.encryptedPassword, 'base64'));
   }
+  const ssh = c.ssh
+    ? {
+        host: c.ssh.host,
+        port: c.ssh.port,
+        user: c.ssh.user,
+        password: c.ssh.encryptedPassword
+          ? safeStorage.decryptString(Buffer.from(c.ssh.encryptedPassword, 'base64'))
+          : ''
+      }
+    : undefined;
   return {
     dialect: c.dialect,
     host: c.host,
@@ -147,6 +185,7 @@ export async function loadConfig(id: string): Promise<ConnectionConfig> {
     user: c.user,
     password,
     database: c.database,
-    ssl: c.ssl
+    ssl: c.ssl,
+    ...(ssh ? { ssh } : {})
   };
 }

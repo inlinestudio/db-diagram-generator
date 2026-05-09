@@ -11,7 +11,7 @@ import {
   useReactFlow,
   MarkerType
 } from '@xyflow/react';
-import type { Edge, Node } from '@xyflow/react';
+import type { Edge } from '@xyflow/react';
 import dagre from 'dagre';
 import { toPng } from 'html-to-image';
 import type { DiagramPayload, TableSchema } from '@shared/schema';
@@ -45,9 +45,8 @@ function computeNodeWidth(table: TableSchema, fkColumns: Set<string>): number {
     let badgeCount = 0;
     if (col.isPrimaryKey) badgeCount++;
     if (fkColumns.has(col.name)) badgeCount++;
-    const badgeW = badgeCount > 0
-      ? badgeCount * BADGE_WIDTH + (badgeCount - 1) * BADGE_GAP + NAME_BADGE_GAP
-      : 0;
+    const badgeW =
+      badgeCount > 0 ? badgeCount * BADGE_WIDTH + (badgeCount - 1) * BADGE_GAP + NAME_BADGE_GAP : 0;
     const nameW = measureWidth(col.name, NAME_FONT);
     const typeW = measureWidth(`${col.dataType}${col.nullable ? '' : ' NOT NULL'}`, TYPE_FONT);
     const rowW = HORIZ_PADDING + badgeW + nameW + NAME_TYPE_GAP + typeW;
@@ -58,7 +57,7 @@ function computeNodeWidth(table: TableSchema, fkColumns: Set<string>): number {
 
 const nodeTypes = { table: TableNode };
 
-type Props = { payload: DiagramPayload; onBack: () => void };
+type Props = { payload: DiagramPayload };
 
 export default function Diagram(props: Props) {
   return (
@@ -68,12 +67,24 @@ export default function Diagram(props: Props) {
   );
 }
 
-function DiagramInner({ payload, onBack }: Props) {
+function tableKey(t: { schema: string | null; name: string }) {
+  return `${t.schema ?? ''}.${t.name}`;
+}
+
+function DiagramInner({ payload }: Props) {
   const flowRef = useRef<HTMLDivElement>(null);
   const { fitView } = useReactFlow();
   const [snap, setSnap] = useState(true);
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
+  const [filterSearch, setFilterSearch] = useState('');
 
-  const { initialNodes, initialEdges } = useMemo(() => buildGraph(payload), [payload]);
+  const filteredPayload = useMemo<DiagramPayload>(() => {
+    if (selectedKeys.size === 0) return payload;
+    const tables = payload.tables.filter((t) => selectedKeys.has(tableKey(t)));
+    return { tables, rootKey: payload.rootKey };
+  }, [payload, selectedKeys]);
+
+  const { initialNodes, initialEdges } = useMemo(() => buildGraph(filteredPayload), [filteredPayload]);
   const [nodes, setNodes, onNodesChange] = useNodesState<TableNodeType>(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(initialEdges);
 
@@ -107,18 +118,84 @@ function DiagramInner({ payload, onBack }: Props) {
       }
     });
     const link = document.createElement('a');
-    link.download = `${payload.root.schema ?? 'schema'}.${payload.root.name}.png`;
+    link.download = 'schema.png';
     link.href = dataUrl;
     link.click();
-  }, [fitView, payload.root]);
+  }, [fitView]);
+
+  const allTables = payload.tables;
+  const filterMatches = useMemo(() => {
+    const q = filterSearch.trim().toLowerCase();
+    if (!q) return allTables;
+    return allTables.filter((t) => tableKey(t).toLowerCase().includes(q));
+  }, [allTables, filterSearch]);
+
+  const toggleKey = (k: string) => {
+    setSelectedKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(k)) next.delete(k);
+      else next.add(k);
+      return next;
+    });
+  };
 
   return (
     <div className="diagram-wrap">
       <div className="diagram-toolbar">
-        <button onClick={onBack} className="btn-link">← Back</button>
+        <details className="filter-dropdown">
+          <summary>
+            Filter:{' '}
+            <strong>
+              {selectedKeys.size === 0 ? 'All tables' : `${selectedKeys.size} selected`}
+            </strong>
+          </summary>
+          <div className="filter-panel">
+            <input
+              type="search"
+              placeholder="Search…"
+              value={filterSearch}
+              onChange={(e) => setFilterSearch(e.target.value)}
+            />
+            <div className="filter-actions">
+              <button
+                type="button"
+                className="btn-link"
+                onClick={() => setSelectedKeys(new Set(allTables.map(tableKey)))}
+              >
+                Select all
+              </button>
+              <button
+                type="button"
+                className="btn-link"
+                onClick={() => setSelectedKeys(new Set())}
+              >
+                Clear
+              </button>
+            </div>
+            <ul className="filter-list">
+              {filterMatches.map((t) => {
+                const k = tableKey(t);
+                return (
+                  <li key={k}>
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={selectedKeys.has(k)}
+                        onChange={() => toggleKey(k)}
+                      />
+                      {t.schema && <span className="schema">{t.schema}.</span>}
+                      <span className="name">{t.name}</span>
+                    </label>
+                  </li>
+                );
+              })}
+              {filterMatches.length === 0 && <li className="empty">No tables match.</li>}
+            </ul>
+          </div>
+        </details>
         <span className="title">
-          {payload.root.schema ? `${payload.root.schema}.` : ''}
-          {payload.root.name}
+          {filteredPayload.tables.length} of {allTables.length} table
+          {allTables.length === 1 ? '' : 's'}
         </span>
         <button onClick={exportPng}>Export PNG</button>
       </div>
@@ -141,7 +218,14 @@ function DiagramInner({ payload, onBack }: Props) {
               title={snap ? 'Snap to grid: on' : 'Snap to grid: off'}
               className={snap ? 'snap-on' : ''}
             >
-              <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <svg
+                viewBox="0 0 16 16"
+                width="12"
+                height="12"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+              >
                 <path d="M2 6h12M2 10h12M6 2v12M10 2v12" />
               </svg>
             </ControlButton>
@@ -154,10 +238,9 @@ function DiagramInner({ payload, onBack }: Props) {
 }
 
 function buildGraph(payload: DiagramPayload): { initialNodes: TableNodeType[]; initialEdges: Edge[] } {
-  const all: TableSchema[] = [payload.root, ...payload.neighbors];
   const seen = new Map<string, TableSchema>();
-  for (const t of all) {
-    const key = `${t.schema ?? ''}.${t.name}`;
+  for (const t of payload.tables) {
+    const key = tableKey(t);
     if (!seen.has(key)) seen.set(key, t);
   }
 
@@ -212,7 +295,7 @@ function buildGraph(payload: DiagramPayload): { initialNodes: TableNodeType[]; i
         name: t.name,
         columns: t.columns,
         fkColumns,
-        isRoot: t === payload.root,
+        isRoot: payload.rootKey === key,
         width
       }
     };

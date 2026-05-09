@@ -1,6 +1,8 @@
 import { Client } from 'pg';
-import type { ConnectionConfig, DiagramPayload, TableRef, TableSchema, ColumnMeta, ForeignKey } from '@shared/schema';
+import type { ConnectionConfig, DiagramPayload, TableSchema, ColumnMeta, ForeignKey } from '@shared/schema';
 import type { DbAdapter } from './types';
+
+type TableRef = { schema: string; name: string };
 
 export class PostgresAdapter implements DbAdapter {
   private client: Client | null = null;
@@ -28,7 +30,7 @@ export class PostgresAdapter implements DbAdapter {
     return this.client;
   }
 
-  async listTables(): Promise<TableRef[]> {
+  private async listTables(): Promise<TableRef[]> {
     const res = await this.c().query<{ schema: string; name: string }>(
       `SELECT table_schema AS schema, table_name AS name
          FROM information_schema.tables
@@ -149,23 +151,10 @@ export class PostgresAdapter implements DbAdapter {
     return { schema, name, columns, foreignKeys, referencedBy };
   }
 
-  async listTablesRaw() {
-    return this.listTables();
-  }
-
-  async getDiagram(table: TableRef): Promise<DiagramPayload> {
-    const schema = table.schema ?? 'public';
-    const root = await this.loadTable(schema, table.name);
-    const neighborRefs = new Set<string>();
-    for (const fk of root.foreignKeys) neighborRefs.add(`${fk.refSchema}.${fk.refTable}`);
-    for (const ref of root.referencedBy) neighborRefs.add(`${ref.refSchema}.${ref.refTable}`);
-    const neighbors = await Promise.all(
-      [...neighborRefs].map((k) => {
-        const [s, n] = k.split('.');
-        return this.loadTable(s, n);
-      })
-    );
-    return { root, neighbors };
+  async getDiagram(): Promise<DiagramPayload> {
+    const refs = await this.listTables();
+    const tables = await Promise.all(refs.map((r) => this.loadTable(r.schema, r.name)));
+    return { tables };
   }
 }
 

@@ -1,4 +1,4 @@
-import type { ConnectionConfig, DiagramPayload, TableRef } from '@shared/schema';
+import type { ConnectionConfig, DiagramPayload } from '@shared/schema';
 import type { DbAdapter } from './types';
 
 export class SqliteAdapter implements DbAdapter {
@@ -6,10 +6,7 @@ export class SqliteAdapter implements DbAdapter {
     throw new Error('SQLite adapter: not yet implemented. See CLAUDE.md "When extending".');
   }
   async disconnect(): Promise<void> {}
-  async listTables(): Promise<TableRef[]> {
-    throw new Error('SQLite adapter: not yet implemented.');
-  }
-  async getDiagram(_table: TableRef): Promise<DiagramPayload> {
+  async getDiagram(): Promise<DiagramPayload> {
     throw new Error('SQLite adapter: not yet implemented.');
   }
 }

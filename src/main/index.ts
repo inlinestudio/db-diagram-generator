@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import { join } from 'node:path';
 import pkg from 'electron-updater';
 import { IPC } from '@shared/ipc';
-import type { ConnectionConfig, TableRef } from '@shared/schema';
+import type { ConnectionConfig } from '@shared/schema';
 import { active, connect, disconnect } from './db';
 import * as connections from './connections';
 
@@ -96,12 +96,8 @@ app.whenReady().then(() => {
     await disconnect();
   });
 
-  ipcMain.handle(IPC.listTables, async () => {
-    return active().listTables();
-  });
-
-  ipcMain.handle(IPC.getDiagram, async (_e, table: TableRef) => {
-    return active().getDiagram(table);
+  ipcMain.handle(IPC.getDiagram, async () => {
+    return active().getDiagram();
   });
 
   ipcMain.handle(IPC.listSaved, async () => connections.list());

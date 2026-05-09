@@ -1,9 +1,8 @@
-import type { ConnectionConfig, DiagramPayload, TableRef } from './schema';
+import type { ConnectionConfig, DiagramPayload } from './schema';
 
 export const IPC = {
   connect: 'db:connect',
   disconnect: 'db:disconnect',
-  listTables: 'db:listTables',
   getDiagram: 'db:getDiagram',
   listSaved: 'conn:list',
   saveConnection: 'conn:save',
@@ -24,13 +23,13 @@ export type SavedConnectionMeta = {
   database?: string;
   file?: string;
   ssl?: boolean;
+  ssh?: { host: string; port: number; user: string };
 };
 
 export type IpcContract = {
   connect: (cfg: ConnectionConfig) => Promise<ConnectResult>;
   disconnect: () => Promise<void>;
-  listTables: () => Promise<TableRef[]>;
-  getDiagram: (table: TableRef) => Promise<DiagramPayload>;
+  getDiagram: () => Promise<DiagramPayload>;
   listSaved: () => Promise<SavedConnectionMeta[]>;
   saveConnection: (name: string, cfg: ConnectionConfig) => Promise<SaveResult>;
   deleteConnection: (id: string) => Promise<void>;

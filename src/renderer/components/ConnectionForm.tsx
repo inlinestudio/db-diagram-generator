@@ -19,10 +19,35 @@ export default function ConnectionForm({ onConnected, busy }: Props) {
   const [database, setDatabase] = useState('');
   const [file, setFile] = useState('');
   const [ssl, setSsl] = useState(false);
+  const [useSsh, setUseSsh] = useState(false);
+  const [sshHost, setSshHost] = useState('');
+  const [sshPort, setSshPort] = useState('22');
+  const [sshUser, setSshUser] = useState('');
+  const [sshPassword, setSshPassword] = useState('');
   const [saveAs, setSaveAs] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [saved, setSaved] = useState<SavedConnectionMeta[]>([]);
+
+  const resetForm = () => {
+    setDialect('demo');
+    setHost('localhost');
+    setPort('5432');
+    setUser('');
+    setPassword('');
+    setDatabase('');
+    setFile('');
+    setSsl(false);
+    setUseSsh(false);
+    setSshHost('');
+    setSshPort('22');
+    setSshUser('');
+    setSshPassword('');
+    setSaveAs('');
+    setEditingId(null);
+    setError(null);
+  };
 
   const refreshSaved = useCallback(async () => {
     setSaved(await window.db.listSaved());
@@ -42,7 +67,17 @@ export default function ConnectionForm({ onConnected, busy }: Props) {
       user,
       password,
       database,
-      ssl
+      ssl,
+      ...(useSsh
+        ? {
+            ssh: {
+              host: sshHost,
+              port: Number(sshPort),
+              user: sshUser,
+              password: sshPassword
+            }
+          }
+        : {})
     };
   };
 
@@ -76,10 +111,12 @@ export default function ConnectionForm({ onConnected, busy }: Props) {
 
   const loadSaved = async (id: string) => {
     setError(null);
+    setEditingId(id);
     const cfg = await window.db.loadSaved(id);
     setDialect(cfg.dialect);
     if (cfg.dialect === 'sqlite') {
       setFile(cfg.file);
+      setUseSsh(false);
     } else if (cfg.dialect !== 'demo') {
       setHost(cfg.host);
       setPort(String(cfg.port));
@@ -87,6 +124,15 @@ export default function ConnectionForm({ onConnected, busy }: Props) {
       setPassword(cfg.password);
       setDatabase(cfg.database);
       setSsl(cfg.ssl ?? false);
+      if (cfg.ssh) {
+        setUseSsh(true);
+        setSshHost(cfg.ssh.host);
+        setSshPort(String(cfg.ssh.port));
+        setSshUser(cfg.ssh.user);
+        setSshPassword(cfg.ssh.password);
+      } else {
+        setUseSsh(false);
+      }
     }
     setSaveAs('');
   };
@@ -130,6 +176,7 @@ export default function ConnectionForm({ onConnected, busy }: Props) {
                     {s.dialect !== 'demo' && s.dialect !== 'sqlite' && s.host && ` · ${s.host}:${s.port}`}
                     {s.database && ` · ${s.database}`}
                     {s.file && ` · ${s.file}`}
+                    {s.ssh && ` · via ${s.ssh.user}@${s.ssh.host}:${s.ssh.port}`}
                   </span>
                 </div>
                 <div className="saved-actions">
@@ -144,7 +191,14 @@ export default function ConnectionForm({ onConnected, busy }: Props) {
       )}
 
       <form className="card" onSubmit={submit}>
-        <h2>Connect to database</h2>
+        <div className="card-header">
+          <h2>{editingId ? 'Edit saved connection' : 'Connect to database'}</h2>
+          {editingId && (
+            <button type="button" className="btn-link" onClick={resetForm}>
+              Cancel
+            </button>
+          )}
+        </div>
         <label>
           Dialect
           <select value={dialect} onChange={(e) => handleDialectChange(e.target.value as Dialect)}>
@@ -193,6 +247,46 @@ export default function ConnectionForm({ onConnected, busy }: Props) {
               <input type="checkbox" checked={ssl} onChange={(e) => setSsl(e.target.checked)} />
               Use SSL
             </label>
+            <label className="checkbox">
+              <input
+                type="checkbox"
+                checked={useSsh}
+                onChange={(e) => setUseSsh(e.target.checked)}
+              />
+              Tunnel through SSH
+            </label>
+            {useSsh && (
+              <fieldset className="ssh-block">
+                <legend>SSH</legend>
+                <div className="row">
+                  <label className="grow">
+                    SSH host
+                    <input value={sshHost} onChange={(e) => setSshHost(e.target.value)} required />
+                  </label>
+                  <label>
+                    Port
+                    <input value={sshPort} onChange={(e) => setSshPort(e.target.value)} required />
+                  </label>
+                </div>
+                <div className="row">
+                  <label className="grow">
+                    SSH user
+                    <input value={sshUser} onChange={(e) => setSshUser(e.target.value)} required />
+                  </label>
+                  <label className="grow">
+                    SSH password
+                    <input
+                      type="password"
+                      value={sshPassword}
+                      onChange={(e) => setSshPassword(e.target.value)}
+                    />
+                  </label>
+                </div>
+                <div className="hint">
+                  DB host/port above target the destination as seen from the SSH bastion.
+                </div>
+              </fieldset>
+            )}
           </>
         )}
 

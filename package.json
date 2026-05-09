@@ -23,6 +23,7 @@
     "postinstall": "electron-builder install-app-deps && node node_modules/electron/install.js"
   },
   "dependencies": {
+    "@types/ssh2": "^1.15.5",
     "@xyflow/react": "^12.0",
     "dagre": "^0.8.5",
     "electron-updater": "^6.8.3",
@@ -31,7 +32,8 @@
     "mysql2": "^3.0",
     "pg": "^8.0",
     "react": "^19.0",
-    "react-dom": "^19.0"
+    "react-dom": "^19.0",
+    "ssh2": "^1.17.0"
   },
   "devDependencies": {
     "@types/dagre": "^0.7.52",

@@ -1,5 +1,12 @@
 export type Dialect = 'postgres' | 'mysql' | 'sqlite' | 'mssql' | 'demo';
 
+export type SshConfig = {
+  host: string;
+  port: number;
+  user: string;
+  password: string;
+};
+
 export type ConnectionConfig =
   | {
       dialect: 'postgres' | 'mysql' | 'mssql';
@@ -9,6 +16,7 @@ export type ConnectionConfig =
       password: string;
       database: string;
       ssl?: boolean;
+      ssh?: SshConfig;
     }
   | { dialect: 'sqlite'; file: string }
   | { dialect: 'demo' };
@@ -43,6 +51,6 @@ export type TableSchema = TableRef & {
 };
 
 export type DiagramPayload = {
-  root: TableSchema;
-  neighbors: TableSchema[];
+  tables: TableSchema[];
+  rootKey?: string;
 };

@@ -1,4 +1,4 @@
-import type { ConnectionConfig, DiagramPayload, TableRef, TableSchema } from '@shared/schema';
+import type { ConnectionConfig, DiagramPayload, TableSchema } from '@shared/schema';
 import type { DbAdapter } from './types';
 
 const users: TableSchema = {
@@ -46,30 +46,11 @@ const sessions: TableSchema = {
   referencedBy: []
 };
 
-const TABLES: Record<string, TableSchema> = {
-  'public.users': users,
-  'public.orders': orders,
-  'public.sessions': sessions
-};
-
 export class DemoAdapter implements DbAdapter {
   async connect(_cfg: ConnectionConfig) {}
   async disconnect() {}
 
-  async listTables(): Promise<TableRef[]> {
-    return Object.values(TABLES).map((t) => ({ schema: t.schema, name: t.name }));
-  }
-
-  async getDiagram(table: TableRef): Promise<DiagramPayload> {
-    const key = `${table.schema ?? 'public'}.${table.name}`;
-    const root = TABLES[key];
-    if (!root) throw new Error(`Unknown table: ${key}`);
-
-    const neighborKeys = new Set<string>();
-    for (const fk of root.foreignKeys) neighborKeys.add(`${fk.refSchema ?? 'public'}.${fk.refTable}`);
-    for (const ref of root.referencedBy) neighborKeys.add(`${ref.refSchema ?? 'public'}.${ref.refTable}`);
-
-    const neighbors = [...neighborKeys].map((k) => TABLES[k]).filter((t): t is TableSchema => Boolean(t));
-    return { root, neighbors };
+  async getDiagram(): Promise<DiagramPayload> {
+    return { tables: [users, orders, sessions] };
   }
 }

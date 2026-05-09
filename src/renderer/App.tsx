@@ -1,14 +1,12 @@
 import { useState } from 'react';
-import type { DiagramPayload, TableRef } from '@shared/schema';
+import type { DiagramPayload } from '@shared/schema';
 import ConnectionForm from './components/ConnectionForm';
-import TablePicker from './components/TablePicker';
 import Diagram from './components/Diagram';
 
-type Stage = 'connect' | 'pick' | 'diagram';
+type Stage = 'connect' | 'diagram';
 
 export default function App() {
   const [stage, setStage] = useState<Stage>('connect');
-  const [tables, setTables] = useState<TableRef[]>([]);
   const [diagram, setDiagram] = useState<DiagramPayload | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -17,21 +15,7 @@ export default function App() {
     setBusy(true);
     setError(null);
     try {
-      const t = await window.db.listTables();
-      setTables(t);
-      setStage('pick');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const handlePick = async (table: TableRef) => {
-    setBusy(true);
-    setError(null);
-    try {
-      const d = await window.db.getDiagram(table);
+      const d = await window.db.getDiagram();
       setDiagram(d);
       setStage('diagram');
     } catch (err) {
@@ -43,7 +27,6 @@ export default function App() {
 
   const handleDisconnect = async () => {
     await window.db.disconnect();
-    setTables([]);
     setDiagram(null);
     setStage('connect');
   };
@@ -58,10 +41,7 @@ export default function App() {
       </header>
       {error && <div className="error">{error}</div>}
       {stage === 'connect' && <ConnectionForm onConnected={handleConnected} busy={busy} />}
-      {stage === 'pick' && <TablePicker tables={tables} onPick={handlePick} busy={busy} />}
-      {stage === 'diagram' && diagram && (
-        <Diagram payload={diagram} onBack={() => setStage('pick')} />
-      )}
+      {stage === 'diagram' && diagram && <Diagram payload={diagram} />}
     </div>
   );
 }
