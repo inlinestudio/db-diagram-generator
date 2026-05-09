@@ -19,8 +19,7 @@
     "package:mac": "npm run build && electron-builder --mac --config --publish never",
     "package:win": "npm run build && electron-builder --win --config --publish never",
     "package:linux": "npm run build && electron-builder --linux --config --publish never",
-    "package:all": "npm run build && electron-builder -mwl --config --publish never",
-    "postinstall": "electron-builder install-app-deps && node node_modules/electron/install.js"
+    "package:all": "npm run build && electron-builder -mwl --config --publish never"
   },
   "dependencies": {
     "@types/ssh2": "^1.15.5",
