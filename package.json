@@ -23,7 +23,7 @@
     "@xyflow/react": "^12.3.5",
     "better-sqlite3": "^11.5.0",
     "dagre": "^0.8.5",
-    "html-to-image": "1.11.11",
+    "html-to-image": "1.11.13",
     "html2canvas-pro": "^2.0.2",
     "mssql": "^11.0.1",
     "mysql2": "^3.11.4",
