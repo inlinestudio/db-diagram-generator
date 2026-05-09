@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.3](https://github.com/inlinestudio/db-diagram-generator/compare/v1.0.2...v1.0.3) (2026-05-09)
+
+
+### Bug Fixes
+
+* release ([1aad74b](https://github.com/inlinestudio/db-diagram-generator/commit/1aad74b97cc39652596a335e858ebc8dbec6318d))
+
 ## [1.0.2](https://github.com/inlinestudio/db-diagram-generator/compare/v1.0.1...v1.0.2) (2026-05-09)
 
 
