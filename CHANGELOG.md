@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.0 (2026-05-09)
+
+
+### Features
+
+* setup apple cert ([c8349fe](https://github.com/inlinestudio/db-diagram-generator/commit/c8349fee14f8d5426c4ab87623245cc54fab9967))
+
 ## [1.0.3](https://github.com/inlinestudio/db-diagram-generator/compare/v1.0.2...v1.0.3) (2026-05-09)
 
 
