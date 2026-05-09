@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.2](https://github.com/inlinestudio/db-diagram-generator/compare/v1.1.1...v1.1.2) (2026-05-09)
+
+
+### Bug Fixes
+
+* override cpu-features breaks on last three versions of electron ([bfe84d2](https://github.com/inlinestudio/db-diagram-generator/commit/bfe84d2f9337575b917f5cd779302938dc8ffc78))
+
 ## [1.1.1](https://github.com/inlinestudio/db-diagram-generator/compare/v1.1.0...v1.1.1) (2026-05-09)
 
 
