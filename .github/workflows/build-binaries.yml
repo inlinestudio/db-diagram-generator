@@ -19,12 +19,15 @@ jobs:
         include:
           - os: ubuntu-latest
             platform: linux
+            script: package:linux
 
           - os: windows-latest
             platform: windows
+            script: package:win
 
           - os: macos-latest
             platform: macos
+            script: package:mac
 
     steps:
       - name: Checkout repository
@@ -33,17 +36,14 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Build application
-        run: npm run build
-
-      - name: Build Electron app
-        run: npm run dist
+      - name: Build and package
+        run: npm run ${{ matrix.script }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -51,15 +51,15 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/*.exe
-            dist/*.msi
-            dist/*.dmg
-            dist/*.zip
-            dist/*.AppImage
-            dist/*.deb
-            dist/*.rpm
-            dist/*.snap
-            dist/*.blockmap
-            dist/latest*.yml
+            release/*.exe
+            release/*.msi
+            release/*.dmg
+            release/*.zip
+            release/*.AppImage
+            release/*.deb
+            release/*.rpm
+            release/*.snap
+            release/*.blockmap
+            release/latest*.yml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
