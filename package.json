@@ -25,6 +25,7 @@
   "dependencies": {
     "@xyflow/react": "^12.0",
     "dagre": "^0.8.5",
+    "electron-updater": "^6.8.3",
     "html-to-image": "1.11.11",
     "mssql": "^12.0",
     "mysql2": "^3.0",
@@ -50,6 +51,11 @@
     "productName": "DB Diagram Generator",
     "directories": {
       "output": "release"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "inlinestudio",
+      "repo": "db-diagram-generator"
     },
     "files": [
       "out/**/*",

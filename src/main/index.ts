@@ -1,11 +1,52 @@
-import { app, BrowserWindow, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import { join } from 'node:path';
+import pkg from 'electron-updater';
 import { IPC } from '@shared/ipc';
 import type { ConnectionConfig, TableRef } from '@shared/schema';
 import { active, connect, disconnect } from './db';
 import * as connections from './connections';
 
+const { autoUpdater } = pkg;
 const isDev = !app.isPackaged;
+
+function setupAutoUpdater() {
+  if (isDev) return;
+
+  autoUpdater.autoDownload = false;
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  autoUpdater.on('update-available', async (info) => {
+    const result = await dialog.showMessageBox({
+      type: 'info',
+      title: 'Update available',
+      message: `Version ${info.version} is available.`,
+      detail: 'Download and install the update?',
+      buttons: ['Download', 'Later'],
+      defaultId: 0,
+      cancelId: 1
+    });
+    if (result.response === 0) autoUpdater.downloadUpdate();
+  });
+
+  autoUpdater.on('update-downloaded', async () => {
+    const result = await dialog.showMessageBox({
+      type: 'info',
+      title: 'Update ready',
+      message: 'Update downloaded.',
+      detail: 'Restart now to install, or it will install when you next quit.',
+      buttons: ['Restart', 'Later'],
+      defaultId: 0,
+      cancelId: 1
+    });
+    if (result.response === 0) autoUpdater.quitAndInstall();
+  });
+
+  autoUpdater.on('error', (err) => {
+    console.error('autoUpdater error:', err);
+  });
+
+  autoUpdater.checkForUpdates().catch((err) => console.error('checkForUpdates failed:', err));
+}
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -79,6 +120,7 @@ app.whenReady().then(() => {
   ipcMain.handle(IPC.loadSaved, async (_e, id: string) => connections.loadConfig(id));
 
   createWindow();
+  setupAutoUpdater();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
