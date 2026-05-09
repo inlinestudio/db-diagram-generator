@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.3](https://github.com/inlinestudio/db-diagram-generator/compare/v1.1.2...v1.1.3) (2026-05-09)
+
+
+### Bug Fixes
+
+* update lock for override ([fddbd01](https://github.com/inlinestudio/db-diagram-generator/commit/fddbd014547f8a52703acfe745e28d82d3ca1601))
+
 ## [1.1.2](https://github.com/inlinestudio/db-diagram-generator/compare/v1.1.1...v1.1.2) (2026-05-09)
 
 
