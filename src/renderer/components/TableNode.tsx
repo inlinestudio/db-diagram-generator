@@ -8,13 +8,14 @@ export type TableNodeData = {
   columns: ColumnMeta[];
   fkColumns: Set<string>;
   isRoot: boolean;
+  width: number;
 };
 
 export type TableNodeType = Node<TableNodeData, 'table'>;
 
 export default function TableNode({ data }: NodeProps<TableNodeType>) {
   return (
-    <div className={`table-node ${data.isRoot ? 'root' : ''}`}>
+    <div className={`table-node ${data.isRoot ? 'root' : ''}`} style={{ width: data.width }}>
       <div className="table-header">
         {data.schema && <span className="schema">{data.schema}.</span>}
         <span className="name">{data.name}</span>

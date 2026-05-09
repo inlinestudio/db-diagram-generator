@@ -17,9 +17,44 @@ import { toPng } from 'html-to-image';
 import type { DiagramPayload, TableSchema } from '@shared/schema';
 import TableNode, { type TableNodeType } from './TableNode';
 
-const NODE_WIDTH = 280;
 const ROW_HEIGHT = 28;
 const HEADER_HEIGHT = 40;
+const MIN_NODE_WIDTH = 280;
+const MAX_NODE_WIDTH = 600;
+const HORIZ_PADDING = 24;
+const BADGE_WIDTH = 18;
+const BADGE_GAP = 4;
+const NAME_BADGE_GAP = 6;
+const NAME_TYPE_GAP = 12;
+const HEADER_FONT = "600 13px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+const NAME_FONT = "12px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+const TYPE_FONT = "11px ui-monospace, SFMono-Regular, monospace";
+
+let measureCtx: CanvasRenderingContext2D | null = null;
+function measureWidth(text: string, font: string): number {
+  if (!measureCtx) measureCtx = document.createElement('canvas').getContext('2d');
+  if (!measureCtx) return text.length * 7;
+  measureCtx.font = font;
+  return measureCtx.measureText(text).width;
+}
+
+function computeNodeWidth(table: TableSchema, fkColumns: Set<string>): number {
+  const headerText = `${table.schema ? table.schema + '.' : ''}${table.name}`;
+  let widest = HORIZ_PADDING + measureWidth(headerText, HEADER_FONT);
+  for (const col of table.columns) {
+    let badgeCount = 0;
+    if (col.isPrimaryKey) badgeCount++;
+    if (fkColumns.has(col.name)) badgeCount++;
+    const badgeW = badgeCount > 0
+      ? badgeCount * BADGE_WIDTH + (badgeCount - 1) * BADGE_GAP + NAME_BADGE_GAP
+      : 0;
+    const nameW = measureWidth(col.name, NAME_FONT);
+    const typeW = measureWidth(`${col.dataType}${col.nullable ? '' : ' NOT NULL'}`, TYPE_FONT);
+    const rowW = HORIZ_PADDING + badgeW + nameW + NAME_TYPE_GAP + typeW;
+    if (rowW > widest) widest = rowW;
+  }
+  return Math.min(MAX_NODE_WIDTH, Math.max(MIN_NODE_WIDTH, Math.ceil(widest)));
+}
 
 const nodeTypes = { table: TableNode };
 
@@ -130,8 +165,13 @@ function buildGraph(payload: DiagramPayload): { initialNodes: TableNodeType[]; i
   g.setGraph({ rankdir: 'LR', nodesep: 60, ranksep: 120 });
   g.setDefaultEdgeLabel(() => ({}));
 
+  const widths = new Map<string, number>();
   for (const [key, t] of seen) {
-    g.setNode(key, { width: NODE_WIDTH, height: HEADER_HEIGHT + t.columns.length * ROW_HEIGHT });
+    const fkCols = new Set<string>();
+    for (const fk of t.foreignKeys) for (const c of fk.columns) fkCols.add(c);
+    const w = computeNodeWidth(t, fkCols);
+    widths.set(key, w);
+    g.setNode(key, { width: w, height: HEADER_HEIGHT + t.columns.length * ROW_HEIGHT });
   }
 
   const edges: Edge[] = [];
@@ -159,16 +199,21 @@ function buildGraph(payload: DiagramPayload): { initialNodes: TableNodeType[]; i
     const pos = g.node(key);
     const fkColumns = new Set<string>();
     for (const fk of t.foreignKeys) for (const c of fk.columns) fkColumns.add(c);
+    const width = widths.get(key) ?? MIN_NODE_WIDTH;
     return {
       id: key,
       type: 'table',
-      position: { x: pos.x - NODE_WIDTH / 2, y: pos.y - (HEADER_HEIGHT + t.columns.length * ROW_HEIGHT) / 2 },
+      position: {
+        x: pos.x - width / 2,
+        y: pos.y - (HEADER_HEIGHT + t.columns.length * ROW_HEIGHT) / 2
+      },
       data: {
         schema: t.schema,
         name: t.name,
         columns: t.columns,
         fkColumns,
-        isRoot: t === payload.root
+        isRoot: t === payload.root,
+        width
       }
     };
   });
