@@ -1,0 +1,16 @@
+# Changelog
+
+## 1.0.0 (2026-05-09)
+
+
+### Features
+
+* add build action ([d58b135](https://github.com/inlinestudio/db-diagram-generator/commit/d58b135f5fc2ec495f405e8d0bf7489c1782a351))
+* add gh related configs and workflows ([5383db9](https://github.com/inlinestudio/db-diagram-generator/commit/5383db9076ef6248aa8b4df518061d8fc8711a0d))
+* update deps ([a7af6aa](https://github.com/inlinestudio/db-diagram-generator/commit/a7af6aa1e0ced3494699d86a320f69a9849704a5))
+
+
+### Bug Fixes
+
+* add missing changelog && extend readme ([fa1f8f4](https://github.com/inlinestudio/db-diagram-generator/commit/fa1f8f411d17fb256fae714a912ab1c8d4121896))
+* node auto-width ([0c8e7d2](https://github.com/inlinestudio/db-diagram-generator/commit/0c8e7d2c6e0d3adf81aa003405a56c18871b114b))
