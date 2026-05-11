@@ -13,7 +13,7 @@ import {
   Position,
   getSmoothStepPath,
 } from '@xyflow/react';
-import type { Edge } from '@xyflow/react';
+import type { Edge, NodeChange, NodePositionChange } from '@xyflow/react';
 import dagre from 'dagre';
 import { toPng } from 'html-to-image';
 import type { DiagramPayload, TableSchema } from '@shared/schema';
@@ -68,8 +68,8 @@ function getHandlePos(
 ): { x: number; y: number; pos: Position } | null {
   const node = nodes.find(n => n.id === nodeId);
   if (!node) return null;
-  const colName = handleId.replace(/-[lr]$/, '');
-  const isRight = handleId.endsWith('-r');
+  const colName = handleId.replace(/-[st][lr]$/, '');
+  const isRight = handleId.endsWith('r');
   const idx = node.data.columns.findIndex(c => c.name === colName);
   if (idx < 0) return null;
   return {
@@ -99,15 +99,17 @@ function computeCrossings(nodes: TableNodeType[], edges: Edge[]): Map<string, Cr
     const tgt = getHandlePos(nodes, edge.target, edge.targetHandle);
     if (!src || !tgt) continue;
     const vx = (edge.data as { vx?: number } | undefined)?.vx;
+    const srcOff = src.pos === Position.Right ? CF_OFFSET : -CF_OFFSET;
+    const tgtOff = tgt.pos === Position.Left ? -CF_OFFSET : CF_OFFSET;
     let d: string;
     if (vx !== undefined) {
-      d = `M ${src.x + CF_OFFSET} ${src.y} L ${vx} ${src.y} L ${vx} ${tgt.y} L ${tgt.x - CF_OFFSET} ${tgt.y}`;
+      d = `M ${src.x + srcOff} ${src.y} L ${vx} ${src.y} L ${vx} ${tgt.y} L ${tgt.x + tgtOff} ${tgt.y}`;
     } else {
       [d] = getSmoothStepPath({
-        sourceX: src.x + CF_OFFSET,
+        sourceX: src.x + srcOff,
         sourceY: src.y,
         sourcePosition: src.pos,
-        targetX: tgt.x - CF_OFFSET,
+        targetX: tgt.x + tgtOff,
         targetY: tgt.y,
         targetPosition: tgt.pos,
         borderRadius: 0,
@@ -203,6 +205,36 @@ function DiagramInner({ payload }: Props) {
     const id = requestAnimationFrame(() => fitView({ padding: 0.2 }));
     return () => cancelAnimationFrame(id);
   }, [initialNodes, initialEdges, setNodes, setEdges, fitView]);
+
+  const onNodesChangeWithEdgeFlip = useCallback((changes: NodeChange<TableNodeType>[]) => {
+    onNodesChange(changes);
+
+    const posChanges = changes.filter(
+      (c): c is NodePositionChange => c.type === 'position' && (c as NodePositionChange).position != null,
+    );
+    if (!posChanges.length) return;
+
+    const posMap = new Map(nodes.map(n => [n.id, n.position]));
+    for (const c of posChanges) {
+      if (c.position) posMap.set(c.id, c.position);
+    }
+
+    setEdges(eds => eds.map(edge => {
+      if (!edge.sourceHandle || !edge.targetHandle) return edge;
+      const srcPos = posMap.get(edge.source);
+      const tgtPos = posMap.get(edge.target);
+      if (!srcPos || !tgtPos) return edge;
+      const srcIsLeft = srcPos.x < tgtPos.x;
+      const srcCol = edge.sourceHandle.replace(/-s[lr]$/, '');
+      const tgtCol = edge.targetHandle.replace(/-t[lr]$/, '');
+      const newSrc = `${srcCol}-s${srcIsLeft ? 'r' : 'l'}`;
+      const newTgt = `${tgtCol}-t${srcIsLeft ? 'l' : 'r'}`;
+      if (newSrc === edge.sourceHandle && newTgt === edge.targetHandle) return edge;
+      // Clear manual vx routing when sides flip — it was computed for the old layout
+      const { vx: _removed, ...restData } = (edge.data ?? {}) as Record<string, unknown>;
+      return { ...edge, sourceHandle: newSrc, targetHandle: newTgt, data: restData };
+    }));
+  }, [onNodesChange, nodes, setEdges]);
 
   const exportPng = useCallback(async () => {
     if (!flowRef.current) return;
@@ -313,7 +345,7 @@ function DiagramInner({ payload }: Props) {
         <ReactFlow
           nodes={nodes}
           edges={edges}
-          onNodesChange={onNodesChange}
+          onNodesChange={onNodesChangeWithEdgeFlip}
           onEdgesChange={onEdgesChange}
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
@@ -384,8 +416,8 @@ function buildGraph(payload: DiagramPayload, crowsFoot: boolean): { initialNodes
         id: `e${edgeId++}`,
         source: key,
         target,
-        sourceHandle: `${fk.columns[0]}-r`,
-        targetHandle: `${fk.refColumns[0]}-l`,
+        sourceHandle: `${fk.columns[0]}-sr`,
+        targetHandle: `${fk.refColumns[0]}-tl`,
         type: crowsFoot ? 'crowsfoot' : undefined,
         markerEnd: crowsFoot ? undefined : { type: MarkerType.ArrowClosed },
         label: fk.columns.length > 1 ? `(${fk.columns.join(', ')})` : undefined

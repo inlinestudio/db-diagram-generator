@@ -28,8 +28,14 @@ export default function TableNode({ data }: NodeProps<TableNodeType>) {
             <Handle
               type="target"
               position={Position.Left}
-              id={`${c.name}-l`}
+              id={`${c.name}-tl`}
               className={`col-handle${data.referencedColumns.has(c.name) ? '' : ' col-handle--hidden'}`}
+            />
+            <Handle
+              type="source"
+              position={Position.Left}
+              id={`${c.name}-sl`}
+              className={`col-handle${data.connectedFkColumns.has(c.name) ? '' : ' col-handle--hidden'}`}
             />
             <span className="col-name">
               {c.isPrimaryKey && <span className="badge pk" title="Primary key">PK</span>}
@@ -44,8 +50,14 @@ export default function TableNode({ data }: NodeProps<TableNodeType>) {
             <Handle
               type="source"
               position={Position.Right}
-              id={`${c.name}-r`}
+              id={`${c.name}-sr`}
               className={`col-handle${data.connectedFkColumns.has(c.name) ? '' : ' col-handle--hidden'}`}
+            />
+            <Handle
+              type="target"
+              position={Position.Right}
+              id={`${c.name}-tr`}
+              className={`col-handle${data.referencedColumns.has(c.name) ? '' : ' col-handle--hidden'}`}
             />
           </li>
         ))}

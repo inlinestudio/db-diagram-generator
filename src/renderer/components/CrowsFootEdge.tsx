@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useCallback } from 'react';
-import { getSmoothStepPath, EdgeLabelRenderer, useReactFlow, type EdgeProps } from '@xyflow/react';
+import { getSmoothStepPath, EdgeLabelRenderer, useReactFlow, Position, type EdgeProps } from '@xyflow/react';
 
 const OFFSET = 20;
 const CF_SPREAD = 7;
@@ -54,25 +54,28 @@ export default function CrowsFootEdge({
 }: EdgeProps) {
   const stroke = selected ? 'var(--accent)' : 'var(--muted)';
   const allCrossings = useContext(CrossingsCtx);
-  const { setEdges, screenToFlowPosition } = useReactFlow();
+  const { setEdges, screenToFlowPosition, getNodes } = useReactFlow();
   const [hovered, setHovered] = useState(false);
 
   const vx = (data as { vx?: number } | undefined)?.vx;
+
+  const srcOff = sourcePosition === Position.Right ? OFFSET : -OFFSET;
+  const tgtOff = targetPosition === Position.Left ? -OFFSET : OFFSET;
 
   let rawPath: string;
   let labelX: number, labelY: number;
 
   if (vx !== undefined) {
-    const sx = sourceX + OFFSET, tx = targetX - OFFSET;
+    const sx = sourceX + srcOff, tx = targetX + tgtOff;
     rawPath = `M ${sx} ${sourceY} L ${vx} ${sourceY} L ${vx} ${targetY} L ${tx} ${targetY}`;
     labelX = vx;
     labelY = (sourceY + targetY) / 2;
   } else {
     [rawPath, labelX, labelY] = getSmoothStepPath({
-      sourceX: sourceX + OFFSET,
+      sourceX: sourceX + srcOff,
       sourceY,
       sourcePosition,
-      targetX: targetX - OFFSET,
+      targetX: targetX + tgtOff,
       targetY,
       targetPosition,
       borderRadius: 0,
@@ -102,11 +105,26 @@ export default function CrowsFootEdge({
 
   const onHandlePointerMove = useCallback((e: React.PointerEvent<SVGCircleElement>) => {
     if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
-    const fp = screenToFlowPosition({ x: e.clientX, y: e.clientY });
-    setEdges(eds => eds.map(ed =>
-      ed.id === id ? { ...ed, data: { ...(ed.data ?? {}), vx: fp.x } } : ed,
-    ));
-  }, [id, setEdges, screenToFlowPosition]);
+    const newVx = screenToFlowPosition({ x: e.clientX, y: e.clientY }).x;
+    setEdges(eds => eds.map(ed => {
+      if (ed.id !== id) return ed;
+      const newData = { ...(ed.data ?? {}), vx: newVx };
+      if (!ed.sourceHandle || !ed.targetHandle) return { ...ed, data: newData };
+      const nodes = getNodes();
+      const srcNode = nodes.find(n => n.id === ed.source);
+      const tgtNode = nodes.find(n => n.id === ed.target);
+      if (!srcNode || !tgtNode) return { ...ed, data: newData };
+      const srcW = (srcNode.data as { width?: number }).width ?? (srcNode.measured?.width ?? 0);
+      const tgtW = (tgtNode.data as { width?: number }).width ?? (tgtNode.measured?.width ?? 0);
+      const srcCx = srcNode.position.x + srcW / 2;
+      const tgtCx = tgtNode.position.x + tgtW / 2;
+      const srcCol = ed.sourceHandle.replace(/-s[lr]$/, '');
+      const tgtCol = ed.targetHandle.replace(/-t[lr]$/, '');
+      const newSrcHandle = `${srcCol}-s${srcCx < newVx ? 'r' : 'l'}`;
+      const newTgtHandle = `${tgtCol}-t${tgtCx > newVx ? 'l' : 'r'}`;
+      return { ...ed, data: newData, sourceHandle: newSrcHandle, targetHandle: newTgtHandle };
+    }));
+  }, [id, setEdges, screenToFlowPosition, getNodes]);
 
   const onHandleDblClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
@@ -117,18 +135,20 @@ export default function CrowsFootEdge({
     }));
   }, [id, setEdges]);
 
-  // Crow's foot (many) at source
+  // Crow's foot (many) at source — direction depends on which side the handle is on
+  const cSign = sourcePosition === Position.Right ? 1 : -1;
   const crowsPath = [
-    `M ${sourceX + 10} ${sourceY} L ${sourceX} ${sourceY - CF_SPREAD}`,
-    `M ${sourceX + 10} ${sourceY} L ${sourceX} ${sourceY}`,
-    `M ${sourceX + 10} ${sourceY} L ${sourceX} ${sourceY + CF_SPREAD}`,
-    `M ${sourceX + 15} ${sourceY - BAR_HALF} L ${sourceX + 15} ${sourceY + BAR_HALF}`,
+    `M ${sourceX + 10 * cSign} ${sourceY} L ${sourceX} ${sourceY - CF_SPREAD}`,
+    `M ${sourceX + 10 * cSign} ${sourceY} L ${sourceX} ${sourceY}`,
+    `M ${sourceX + 10 * cSign} ${sourceY} L ${sourceX} ${sourceY + CF_SPREAD}`,
+    `M ${sourceX + 15 * cSign} ${sourceY - BAR_HALF} L ${sourceX + 15 * cSign} ${sourceY + BAR_HALF}`,
   ].join(' ');
 
   // "One" (exactly one) at target
+  const oSign = targetPosition === Position.Left ? -1 : 1;
   const onePath = [
-    `M ${targetX - 10} ${targetY - BAR_HALF} L ${targetX - 10} ${targetY + BAR_HALF}`,
-    `M ${targetX - 15} ${targetY - BAR_HALF} L ${targetX - 15} ${targetY + BAR_HALF}`,
+    `M ${targetX + 10 * oSign} ${targetY - BAR_HALF} L ${targetX + 10 * oSign} ${targetY + BAR_HALF}`,
+    `M ${targetX + 15 * oSign} ${targetY - BAR_HALF} L ${targetX + 15 * oSign} ${targetY + BAR_HALF}`,
   ].join(' ');
 
   return (
