@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.0](https://github.com/inlinestudio/db-diagram-generator/compare/v1.3.1...v1.4.0) (2026-05-11)
+
+
+### Features
+
+* mysql adapter && chore: styling ([23514f0](https://github.com/inlinestudio/db-diagram-generator/commit/23514f0326a6f662e29fb830116506b178414611))
+
 ## [1.3.1](https://github.com/inlinestudio/db-diagram-generator/compare/v1.3.0...v1.3.1) (2026-05-11)
 
 
