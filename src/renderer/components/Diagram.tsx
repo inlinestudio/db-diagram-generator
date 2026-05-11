@@ -98,15 +98,21 @@ function computeCrossings(nodes: TableNodeType[], edges: Edge[]): Map<string, Cr
     const src = getHandlePos(nodes, edge.source, edge.sourceHandle);
     const tgt = getHandlePos(nodes, edge.target, edge.targetHandle);
     if (!src || !tgt) continue;
-    const [d] = getSmoothStepPath({
-      sourceX: src.x + CF_OFFSET,
-      sourceY: src.y,
-      sourcePosition: src.pos,
-      targetX: tgt.x - CF_OFFSET,
-      targetY: tgt.y,
-      targetPosition: tgt.pos,
-      borderRadius: 0,
-    });
+    const vx = (edge.data as { vx?: number } | undefined)?.vx;
+    let d: string;
+    if (vx !== undefined) {
+      d = `M ${src.x + CF_OFFSET} ${src.y} L ${vx} ${src.y} L ${vx} ${tgt.y} L ${tgt.x - CF_OFFSET} ${tgt.y}`;
+    } else {
+      [d] = getSmoothStepPath({
+        sourceX: src.x + CF_OFFSET,
+        sourceY: src.y,
+        sourcePosition: src.pos,
+        targetX: tgt.x - CF_OFFSET,
+        targetY: tgt.y,
+        targetPosition: tgt.pos,
+        borderRadius: 0,
+      });
+    }
     const pts = parseCrossingPts(d);
     const segs = [];
     for (let i = 0; i < pts.length - 1; i++) {

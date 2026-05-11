@@ -1,5 +1,5 @@
-import { createContext, useContext } from 'react';
-import { getSmoothStepPath, EdgeLabelRenderer, type EdgeProps } from '@xyflow/react';
+import { createContext, useContext, useState, useCallback } from 'react';
+import { getSmoothStepPath, EdgeLabelRenderer, useReactFlow, type EdgeProps } from '@xyflow/react';
 
 const OFFSET = 20;
 const CF_SPREAD = 7;
@@ -50,23 +50,74 @@ export default function CrowsFootEdge({
   sourcePosition, targetPosition,
   selected,
   label,
+  data,
 }: EdgeProps) {
   const stroke = selected ? 'var(--accent)' : 'var(--muted)';
   const allCrossings = useContext(CrossingsCtx);
+  const { setEdges, screenToFlowPosition } = useReactFlow();
+  const [hovered, setHovered] = useState(false);
 
-  const [rawPath, labelX, labelY] = getSmoothStepPath({
-    sourceX: sourceX + OFFSET,
-    sourceY,
-    sourcePosition,
-    targetX: targetX - OFFSET,
-    targetY,
-    targetPosition,
-    borderRadius: 0,
-  });
+  const vx = (data as { vx?: number } | undefined)?.vx;
+
+  let rawPath: string;
+  let labelX: number, labelY: number;
+
+  if (vx !== undefined) {
+    const sx = sourceX + OFFSET, tx = targetX - OFFSET;
+    rawPath = `M ${sx} ${sourceY} L ${vx} ${sourceY} L ${vx} ${targetY} L ${tx} ${targetY}`;
+    labelX = vx;
+    labelY = (sourceY + targetY) / 2;
+  } else {
+    [rawPath, labelX, labelY] = getSmoothStepPath({
+      sourceX: sourceX + OFFSET,
+      sourceY,
+      sourcePosition,
+      targetX: targetX - OFFSET,
+      targetY,
+      targetPosition,
+      borderRadius: 0,
+    });
+  }
 
   const edgePath = applyJumps(rawPath, allCrossings.get(id) ?? []);
 
-  // Crow's foot (many) at source: fan opens toward source node
+  // Find the first substantial vertical segment for the drag handle
+  const pts = parsePts(rawPath);
+  let handleX: number | undefined, handleMidY: number | undefined;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const [x1, y1] = pts[i];
+    const [x2, y2] = pts[i + 1];
+    if (Math.abs(x1 - x2) < 0.5 && Math.abs(y1 - y2) > 4) {
+      handleX = x1;
+      handleMidY = (y1 + y2) / 2;
+      break;
+    }
+  }
+
+  const onHandlePointerDown = useCallback((e: React.PointerEvent<SVGCircleElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.currentTarget.setPointerCapture(e.pointerId);
+  }, []);
+
+  const onHandlePointerMove = useCallback((e: React.PointerEvent<SVGCircleElement>) => {
+    if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
+    const fp = screenToFlowPosition({ x: e.clientX, y: e.clientY });
+    setEdges(eds => eds.map(ed =>
+      ed.id === id ? { ...ed, data: { ...(ed.data ?? {}), vx: fp.x } } : ed,
+    ));
+  }, [id, setEdges, screenToFlowPosition]);
+
+  const onHandleDblClick = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEdges(eds => eds.map(ed => {
+      if (ed.id !== id) return ed;
+      const { vx: _removed, ...rest } = (ed.data ?? {}) as Record<string, unknown>;
+      return { ...ed, data: rest };
+    }));
+  }, [id, setEdges]);
+
+  // Crow's foot (many) at source
   const crowsPath = [
     `M ${sourceX + 10} ${sourceY} L ${sourceX} ${sourceY - CF_SPREAD}`,
     `M ${sourceX + 10} ${sourceY} L ${sourceX} ${sourceY}`,
@@ -74,14 +125,14 @@ export default function CrowsFootEdge({
     `M ${sourceX + 15} ${sourceY - BAR_HALF} L ${sourceX + 15} ${sourceY + BAR_HALF}`,
   ].join(' ');
 
-  // "One" (exactly one) at target: two parallel bars toward target node
+  // "One" (exactly one) at target
   const onePath = [
     `M ${targetX - 10} ${targetY - BAR_HALF} L ${targetX - 10} ${targetY + BAR_HALF}`,
     `M ${targetX - 15} ${targetY - BAR_HALF} L ${targetX - 15} ${targetY + BAR_HALF}`,
   ].join(' ');
 
   return (
-    <>
+    <g onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}>
       <path
         id={id}
         className="react-flow__edge-path"
@@ -93,6 +144,20 @@ export default function CrowsFootEdge({
       <path d={edgePath} fill="none" stroke="transparent" strokeWidth={20} />
       <path d={crowsPath} fill="none" stroke={stroke} strokeWidth={1.5} strokeLinecap="round" />
       <path d={onePath} fill="none" stroke={stroke} strokeWidth={1.5} strokeLinecap="round" />
+      {(hovered || selected) && handleX !== undefined && handleMidY !== undefined && (
+        <circle
+          cx={handleX}
+          cy={handleMidY}
+          r={5}
+          fill={stroke}
+          stroke="var(--bg)"
+          strokeWidth={1.5}
+          style={{ cursor: 'ew-resize', pointerEvents: 'all' }}
+          onPointerDown={onHandlePointerDown}
+          onPointerMove={onHandlePointerMove}
+          onDoubleClick={onHandleDblClick}
+        />
+      )}
       {label && (
         <EdgeLabelRenderer>
           <div
@@ -108,6 +173,6 @@ export default function CrowsFootEdge({
           </div>
         </EdgeLabelRenderer>
       )}
-    </>
+    </g>
   );
 }
