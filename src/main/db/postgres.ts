@@ -71,16 +71,24 @@ export class PostgresAdapter implements DbAdapter {
     );
     const pkSet = new Set(pks.rows.map((r) => r.column_name));
 
-    const uqs = await this.c().query<{ column_name: string }>(
-      `SELECT DISTINCT a.attname AS column_name
+    const uqs = await this.c().query<{ constraint_oid: number; column_name: string }>(
+      `SELECT con.oid AS constraint_oid, a.attname AS column_name
          FROM pg_constraint con
          JOIN pg_class c ON c.oid = con.conrelid
          JOIN pg_namespace n ON n.oid = c.relnamespace
-         JOIN pg_attribute a ON a.attrelid = con.conrelid AND a.attnum = ANY(con.conkey)
-        WHERE con.contype = 'u' AND n.nspname = $1 AND c.relname = $2`,
+         JOIN unnest(con.conkey) WITH ORDINALITY AS u(attnum, ord) ON true
+         JOIN pg_attribute a ON a.attrelid = con.conrelid AND a.attnum = u.attnum
+        WHERE con.contype = 'u' AND n.nspname = $1 AND c.relname = $2
+        ORDER BY con.oid, u.ord`,
       [schema, name]
     );
-    const uqSet = new Set(uqs.rows.map((r) => r.column_name));
+    const uqMap = new Map<number, string[]>();
+    for (const r of uqs.rows) {
+      if (!uqMap.has(r.constraint_oid)) uqMap.set(r.constraint_oid, []);
+      uqMap.get(r.constraint_oid)!.push(r.column_name);
+    }
+    const uniqueConstraints = [...uqMap.values()];
+    const uqSet = new Set(uniqueConstraints.flat());
 
     const columns: ColumnMeta[] = cols.rows.map((r) => ({
       name: r.column_name,
@@ -160,7 +168,7 @@ export class PostgresAdapter implements DbAdapter {
       refColumns: r.ref_cols
     }));
 
-    return { schema, name, columns, foreignKeys, referencedBy };
+    return { schema, name, columns, foreignKeys, referencedBy, uniqueConstraints };
   }
 
   async getDiagram(): Promise<DiagramPayload> {

@@ -11,6 +11,8 @@ export type TableNodeData = {
   referencedColumns: Set<string>;
   isRoot: boolean;
   width: number;
+  uqLabels: Map<string, string>;
+  uqGroups: Map<string, string[]>;
 };
 
 export type TableNodeType = Node<TableNodeData, 'table'>;
@@ -40,7 +42,13 @@ export default function TableNode({ data }: NodeProps<TableNodeType>) {
             <span className="col-name">
               {c.isPrimaryKey && <span className="badge pk" title="Primary key">PK</span>}
               {data.fkColumns.has(c.name) && <span className="badge fk" title="Foreign key">FK</span>}
-              {c.isUnique && !c.isPrimaryKey && <span className="badge uq" title="Unique">UQ</span>}
+              {(() => {
+                const uqLabel = data.uqLabels.get(c.name);
+                if (!uqLabel || c.isPrimaryKey) return null;
+                const group = data.uqGroups.get(uqLabel);
+                const title = group ? `Composite unique key: (${group.join(', ')})` : 'Unique';
+                return <span className="badge uq" title={title}>{uqLabel}</span>;
+              })()}
               {c.name}
             </span>
             <span className="col-type">

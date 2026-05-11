@@ -14,7 +14,8 @@ const users: TableSchema = {
   referencedBy: [
     { columns: ['id'], refSchema: 'public', refTable: 'orders', refColumns: ['user_id'] },
     { columns: ['id'], refSchema: 'public', refTable: 'sessions', refColumns: ['user_id'] }
-  ]
+  ],
+  uniqueConstraints: [['email']]
 };
 
 const orders: TableSchema = {
@@ -29,7 +30,8 @@ const orders: TableSchema = {
   foreignKeys: [
     { columns: ['user_id'], refSchema: 'public', refTable: 'users', refColumns: ['id'], onDelete: 'CASCADE' }
   ],
-  referencedBy: []
+  referencedBy: [],
+  uniqueConstraints: [['user_id', 'status']]
 };
 
 const sessions: TableSchema = {
@@ -43,7 +45,8 @@ const sessions: TableSchema = {
   foreignKeys: [
     { columns: ['user_id'], refSchema: 'public', refTable: 'users', refColumns: ['id'], onDelete: 'CASCADE' }
   ],
-  referencedBy: []
+  referencedBy: [],
+  uniqueConstraints: []
 };
 
 export class DemoAdapter implements DbAdapter {

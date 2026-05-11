@@ -49,6 +49,7 @@ export type TableSchema = TableRef & {
   columns: ColumnMeta[];
   foreignKeys: ForeignKey[];
   referencedBy: ForeignKey[];
+  uniqueConstraints: string[][];
 };
 
 export type DiagramPayload = {
