@@ -26,6 +26,7 @@ export type ColumnMeta = {
   dataType: string;
   nullable: boolean;
   isPrimaryKey: boolean;
+  isUnique: boolean;
   default: string | null;
   comment: string | null;
 };

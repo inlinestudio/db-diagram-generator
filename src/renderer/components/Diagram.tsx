@@ -45,6 +45,7 @@ function computeNodeWidth(table: TableSchema, fkColumns: Set<string>): number {
     let badgeCount = 0;
     if (col.isPrimaryKey) badgeCount++;
     if (fkColumns.has(col.name)) badgeCount++;
+    if (col.isUnique && !col.isPrimaryKey) badgeCount++;
     const badgeW =
       badgeCount > 0 ? badgeCount * BADGE_WIDTH + (badgeCount - 1) * BADGE_GAP + NAME_BADGE_GAP : 0;
     const nameW = measureWidth(col.name, NAME_FONT);
@@ -257,6 +258,8 @@ function buildGraph(payload: DiagramPayload): { initialNodes: TableNodeType[]; i
     g.setNode(key, { width: w, height: HEADER_HEIGHT + t.columns.length * ROW_HEIGHT });
   }
 
+  const referencedColumnsMap = new Map<string, Set<string>>();
+  const connectedFkColumnsMap = new Map<string, Set<string>>();
   const edges: Edge[] = [];
   let edgeId = 0;
   for (const [key, t] of seen) {
@@ -273,6 +276,10 @@ function buildGraph(payload: DiagramPayload): { initialNodes: TableNodeType[]; i
         markerEnd: { type: MarkerType.ArrowClosed },
         label: fk.columns.length > 1 ? `(${fk.columns.join(', ')})` : undefined
       });
+      if (!connectedFkColumnsMap.has(key)) connectedFkColumnsMap.set(key, new Set());
+      for (const c of fk.columns) connectedFkColumnsMap.get(key)!.add(c);
+      if (!referencedColumnsMap.has(target)) referencedColumnsMap.set(target, new Set());
+      for (const c of fk.refColumns) referencedColumnsMap.get(target)!.add(c);
     }
   }
 
@@ -295,6 +302,8 @@ function buildGraph(payload: DiagramPayload): { initialNodes: TableNodeType[]; i
         name: t.name,
         columns: t.columns,
         fkColumns,
+        connectedFkColumns: connectedFkColumnsMap.get(key) ?? new Set(),
+        referencedColumns: referencedColumnsMap.get(key) ?? new Set(),
         isRoot: payload.rootKey === key,
         width
       }

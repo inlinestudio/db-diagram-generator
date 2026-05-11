@@ -8,6 +8,7 @@
   --accent-fg: #ffffff;
   --pk: #f59e0b;
   --fk: #8b5cf6;
+  --uq: #10b981;
   --error-bg: #fef2f2;
   --error-fg: #991b1b;
   --error-border: #fecaca;
@@ -181,10 +182,12 @@ input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1
 }
 .badge.pk { background: var(--pk); }
 .badge.fk { background: var(--fk); }
+.badge.uq { background: var(--uq); }
 
 .col-handle {
   width: 8px; height: 8px;
   background: var(--muted); border: 2px solid var(--panel);
 }
+.col-handle--hidden { opacity: 0; pointer-events: none; }
 .react-flow__edge-path { stroke: var(--muted); stroke-width: 1.5; }
 .react-flow__edge.selected .react-flow__edge-path { stroke: var(--accent); }

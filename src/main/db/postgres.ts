@@ -71,11 +71,23 @@ export class PostgresAdapter implements DbAdapter {
     );
     const pkSet = new Set(pks.rows.map((r) => r.column_name));
 
+    const uqs = await this.c().query<{ column_name: string }>(
+      `SELECT DISTINCT a.attname AS column_name
+         FROM pg_constraint con
+         JOIN pg_class c ON c.oid = con.conrelid
+         JOIN pg_namespace n ON n.oid = c.relnamespace
+         JOIN pg_attribute a ON a.attrelid = con.conrelid AND a.attnum = ANY(con.conkey)
+        WHERE con.contype = 'u' AND n.nspname = $1 AND c.relname = $2`,
+      [schema, name]
+    );
+    const uqSet = new Set(uqs.rows.map((r) => r.column_name));
+
     const columns: ColumnMeta[] = cols.rows.map((r) => ({
       name: r.column_name,
       dataType: formatPgType(r),
       nullable: r.is_nullable === 'YES',
       isPrimaryKey: pkSet.has(r.column_name),
+      isUnique: uqSet.has(r.column_name),
       default: r.column_default,
       comment: null
     }));
