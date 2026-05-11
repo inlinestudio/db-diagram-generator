@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.0](https://github.com/inlinestudio/db-diagram-generator/compare/v1.2.1...v1.3.0) (2026-05-11)
+
+
+### Features
+
+* add unique key grouping with label ([7857a2d](https://github.com/inlinestudio/db-diagram-generator/commit/7857a2dc85204ed443ff23e62055674c1d1769be))
+* autotarget correct handle side on node/edge move ([8de49d4](https://github.com/inlinestudio/db-diagram-generator/commit/8de49d468b4ee6d651b501c47017948c3e7526cb))
+
 ## [1.2.1](https://github.com/inlinestudio/db-diagram-generator/compare/v1.2.0...v1.2.1) (2026-05-11)
 
 
