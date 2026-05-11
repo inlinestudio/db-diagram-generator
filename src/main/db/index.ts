@@ -12,61 +12,61 @@ let current: DbAdapter | null = null;
 let currentTunnel: Tunnel | null = null;
 
 function build(cfg: ConnectionConfig): DbAdapter {
-  switch (cfg.dialect) {
-    case 'demo':
-      return new DemoAdapter();
-    case 'postgres':
-      return new PostgresAdapter();
-    case 'mysql':
-      return new MysqlAdapter();
-    case 'sqlite':
-      return new SqliteAdapter();
-    case 'mssql':
-      return new MssqlAdapter();
-  }
+    switch (cfg.dialect) {
+        case 'demo':
+            return new DemoAdapter();
+        case 'postgres':
+            return new PostgresAdapter();
+        case 'mysql':
+            return new MysqlAdapter();
+        case 'sqlite':
+            return new SqliteAdapter();
+        case 'mssql':
+            return new MssqlAdapter();
+    }
 }
 
 export async function connect(cfg: ConnectionConfig) {
-  await disconnect();
+    await disconnect();
 
-  let effectiveCfg = cfg;
-  let tunnel: Tunnel | null = null;
+    let effectiveCfg = cfg;
+    let tunnel: Tunnel | null = null;
 
-  if (cfg.dialect !== 'demo' && cfg.dialect !== 'sqlite' && cfg.ssh) {
-    try {
-      tunnel = await openTunnel(cfg.ssh, { host: cfg.host, port: cfg.port });
-    } catch (err) {
-      log.error('SSH tunnel failed', err);
-      throw err;
+    if (cfg.dialect !== 'demo' && cfg.dialect !== 'sqlite' && cfg.ssh) {
+        try {
+            tunnel = await openTunnel(cfg.ssh, { host: cfg.host, port: cfg.port });
+        } catch (err) {
+            log.error('SSH tunnel failed', err);
+            throw err;
+        }
+        effectiveCfg = { ...cfg, host: '127.0.0.1', port: tunnel.localPort };
+        delete (effectiveCfg as { ssh?: unknown }).ssh;
     }
-    effectiveCfg = { ...cfg, host: '127.0.0.1', port: tunnel.localPort };
-    delete (effectiveCfg as { ssh?: unknown }).ssh;
-  }
 
-  try {
-    const adapter = build(effectiveCfg);
-    await adapter.connect(effectiveCfg);
-    current = adapter;
-    currentTunnel = tunnel;
-  } catch (err) {
-    log.error(`${cfg.dialect} connect failed`, err);
-    if (tunnel) await tunnel.close().catch(() => {});
-    throw err;
-  }
+    try {
+        const adapter = build(effectiveCfg);
+        await adapter.connect(effectiveCfg);
+        current = adapter;
+        currentTunnel = tunnel;
+    } catch (err) {
+        log.error(`${cfg.dialect} connect failed`, err);
+        if (tunnel) await tunnel.close().catch(() => { });
+        throw err;
+    }
 }
 
 export async function disconnect() {
-  if (current) {
-    await current.disconnect().catch(() => {});
-    current = null;
-  }
-  if (currentTunnel) {
-    await currentTunnel.close().catch(() => {});
-    currentTunnel = null;
-  }
+    if (current) {
+        await current.disconnect().catch(() => { });
+        current = null;
+    }
+    if (currentTunnel) {
+        await currentTunnel.close().catch(() => { });
+        currentTunnel = null;
+    }
 }
 
 export function active(): DbAdapter {
-  if (!current) throw new Error('No active connection');
-  return current;
+    if (!current) throw new Error('No active connection');
+    return current;
 }
