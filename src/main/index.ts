@@ -1,12 +1,18 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import { join } from 'node:path';
 import pkg from 'electron-updater';
+import log from 'electron-log/main';
 import { IPC } from '@shared/ipc';
 import type { ConnectionConfig } from '@shared/schema';
 import { active, connect, disconnect } from './db';
 import * as connections from './connections';
 
+log.initialize();
+log.transports.file.level = 'debug';
+
 const { autoUpdater } = pkg;
+autoUpdater.logger = log;
+
 const isDev = !app.isPackaged;
 
 function setupAutoUpdater() {
@@ -25,7 +31,14 @@ function setupAutoUpdater() {
       defaultId: 0,
       cancelId: 1
     });
-    if (result.response === 0) autoUpdater.downloadUpdate();
+    if (result.response === 0) {
+      log.info('User chose to download update');
+      autoUpdater.downloadUpdate();
+    }
+  });
+
+  autoUpdater.on('download-progress', (progress) => {
+    log.info(`Download progress: ${Math.round(progress.percent)}% (${progress.transferred}/${progress.total} bytes)`);
   });
 
   autoUpdater.on('update-downloaded', async () => {
@@ -42,10 +55,10 @@ function setupAutoUpdater() {
   });
 
   autoUpdater.on('error', (err) => {
-    console.error('autoUpdater error:', err);
+    log.error('autoUpdater error:', err);
   });
 
-  autoUpdater.checkForUpdates().catch((err) => console.error('checkForUpdates failed:', err));
+  autoUpdater.checkForUpdates().catch((err) => log.error('checkForUpdates failed:', err));
 }
 
 function createWindow() {
