@@ -148,6 +148,33 @@ input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1
 .filter-list .schema { color: var(--muted); }
 .filter-list .empty { padding: 8px; color: var(--muted); font-size: 13px; }
 
+.react-flow__controls-button[title] {
+  position: relative;
+  overflow: visible;
+}
+.react-flow__controls-button[title]::after {
+  content: attr(title);
+  position: absolute;
+  left: calc(100% + 8px);
+  top: 50%;
+  transform: translateY(-50%);
+  background: var(--text);
+  color: var(--panel);
+  font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
+  padding: 4px 8px;
+  border-radius: 4px;
+  pointer-events: none;
+  opacity: 0;
+  z-index: 100;
+  transition: opacity 0.1s;
+}
+.react-flow__controls-button[title]:hover::after {
+  opacity: 1;
+  transition-delay: 0.5s;
+}
+
 .react-flow__controls-button.snap-on,
 .react-flow__controls-button.crowsfoot-on {
   background: var(--accent);
