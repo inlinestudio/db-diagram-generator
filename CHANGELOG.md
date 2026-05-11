@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.2.0](https://github.com/inlinestudio/db-diagram-generator/compare/v1.1.3...v1.2.0) (2026-05-11)
+
+
+### Features
+
+* add option to drag handles horizontally ([5f02e1e](https://github.com/inlinestudio/db-diagram-generator/commit/5f02e1e1184f9d65532c65486bb1c4f47da5c753))
+* arc bridge jumps on overlapping edges ([2a51a64](https://github.com/inlinestudio/db-diagram-generator/commit/2a51a64d737381bf66ef3c4edfc90d2f5941e42f))
+* get unique key badges && fix: hide handles not connected to anything ([b8a75de](https://github.com/inlinestudio/db-diagram-generator/commit/b8a75deb53756cad8215af5e1c640fac9c34010b))
+
+
+### Bug Fixes
+
+* flow control tooltips not showing on hover ([6dcbc20](https://github.com/inlinestudio/db-diagram-generator/commit/6dcbc20da7433dfd0ba6f8dee809427af97b11e4))
+
 ## [1.1.3](https://github.com/inlinestudio/db-diagram-generator/compare/v1.1.2...v1.1.3) (2026-05-09)
 
 
