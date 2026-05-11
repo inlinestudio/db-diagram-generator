@@ -9,178 +9,19 @@ import {
     useNodesState,
     useEdgesState,
     useReactFlow,
-    MarkerType,
-    Position,
-    getSmoothStepPath,
 } from '@xyflow/react';
 import type { Edge, NodeChange, NodePositionChange } from '@xyflow/react';
-import dagre from 'dagre';
 import { toPng } from 'html-to-image';
-import type { DiagramPayload, TableSchema } from '@shared/schema';
+import type { DiagramPayload } from '@shared/schema';
 import TableNode, { type TableNodeType } from './TableNode';
 import CrowsFootEdge, { CrossingsCtx } from './CrowsFootEdge';
-
-const ROW_HEIGHT = 28;
-const HEADER_HEIGHT = 40;
-const MIN_NODE_WIDTH = 280;
-const MAX_NODE_WIDTH = 600;
-const HORIZ_PADDING = 24;
-const BADGE_WIDTH = 18;
-const BADGE_GAP = 4;
-const NAME_BADGE_GAP = 6;
-const NAME_TYPE_GAP = 12;
-const HEADER_FONT = "600 13px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
-const NAME_FONT = "12px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
-const TYPE_FONT = "11px ui-monospace, SFMono-Regular, monospace";
-
-let measureCtx: CanvasRenderingContext2D | null = null;
-function measureWidth(text: string, font: string): number {
-    if (!measureCtx) measureCtx = document.createElement('canvas').getContext('2d');
-    if (!measureCtx) return text.length * 7;
-    measureCtx.font = font;
-    return measureCtx.measureText(text).width;
-}
-
-function buildUqLabelsAndGroups(uniqueConstraints: string[][]): {
-    labels: Map<string, string>;
-    groups: Map<string, string[]>;
-} {
-    const labels = new Map<string, string>();
-    const groups = new Map<string, string[]>();
-    let compositeIdx = 0;
-    for (const group of uniqueConstraints) {
-        const isComposite = group.length > 1;
-        if (isComposite) compositeIdx++;
-        const label = isComposite ? `UQK${compositeIdx}` : 'UQK';
-        for (const col of group) labels.set(col, label);
-        if (isComposite) groups.set(label, group);
-    }
-    return { labels, groups };
-}
-
-function badgePx(label: string): number {
-    return label.length <= 2 ? BADGE_WIDTH : BADGE_WIDTH + 6;
-}
-
-function computeNodeWidth(table: TableSchema, fkColumns: Set<string>, uqLabels: Map<string, string>): number {
-    const headerText = `${table.schema ? table.schema + '.' : ''}${table.name}`;
-    let widest = HORIZ_PADDING + measureWidth(headerText, HEADER_FONT);
-    for (const col of table.columns) {
-        const badges: string[] = [];
-        if (col.isPrimaryKey) badges.push('PK');
-        if (fkColumns.has(col.name)) badges.push('FK');
-        const uqLabel = uqLabels.get(col.name);
-        if (uqLabel && !col.isPrimaryKey) badges.push(uqLabel);
-        const badgesW = badges.length > 0
-            ? badges.reduce((s, b) => s + badgePx(b), 0) + (badges.length - 1) * BADGE_GAP + NAME_BADGE_GAP
-            : 0;
-        const nameW = measureWidth(col.name, NAME_FONT);
-        const typeW = measureWidth(`${col.dataType}${col.nullable ? '' : ' NOT NULL'}`, TYPE_FONT);
-        const rowW = HORIZ_PADDING + badgesW + nameW + NAME_TYPE_GAP + typeW;
-        if (rowW > widest) widest = rowW;
-    }
-    return Math.min(MAX_NODE_WIDTH, Math.max(MIN_NODE_WIDTH, Math.ceil(widest)));
-}
-
-const CF_OFFSET = 20; // must match OFFSET in CrowsFootEdge
-
-function getHandlePos(
-    nodes: TableNodeType[],
-    nodeId: string,
-    handleId: string,
-): { x: number; y: number; pos: Position } | null {
-    const node = nodes.find(n => n.id === nodeId);
-    if (!node) return null;
-    const colName = handleId.replace(/-[st][lr]$/, '');
-    const isRight = handleId.endsWith('r');
-    const idx = node.data.columns.findIndex(c => c.name === colName);
-    if (idx < 0) return null;
-    return {
-        x: isRight ? node.position.x + node.data.width : node.position.x,
-        y: node.position.y + HEADER_HEIGHT + idx * ROW_HEIGHT + ROW_HEIGHT / 2,
-        pos: isRight ? Position.Right : Position.Left,
-    };
-}
-
-function parseCrossingPts(d: string): [number, number][] {
-    const pts: [number, number][] = [];
-    const re = /[ML]\s*([-\d.e+]+)[,\s]+([-\d.e+]+)/g;
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(d)) !== null) pts.push([+m[1], +m[2]]);
-    return pts;
-}
-
-type CrossPoint = { x: number; y: number };
-
-function computeCrossings(nodes: TableNodeType[], edges: Edge[]): Map<string, CrossPoint[]> {
-    type PathInfo = { id: string; segs: { x1: number; y1: number; x2: number; y2: number }[] };
-    const infos: PathInfo[] = [];
-
-    for (const edge of edges) {
-        if (edge.type !== 'crowsfoot' || !edge.sourceHandle || !edge.targetHandle) continue;
-        const src = getHandlePos(nodes, edge.source, edge.sourceHandle);
-        const tgt = getHandlePos(nodes, edge.target, edge.targetHandle);
-        if (!src || !tgt) continue;
-        const vx = (edge.data as { vx?: number } | undefined)?.vx;
-        const srcOff = src.pos === Position.Right ? CF_OFFSET : -CF_OFFSET;
-        const tgtOff = tgt.pos === Position.Left ? -CF_OFFSET : CF_OFFSET;
-        let d: string;
-        if (vx !== undefined) {
-            d = `M ${src.x + srcOff} ${src.y} L ${vx} ${src.y} L ${vx} ${tgt.y} L ${tgt.x + tgtOff} ${tgt.y}`;
-        } else {
-            [d] = getSmoothStepPath({
-                sourceX: src.x + srcOff,
-                sourceY: src.y,
-                sourcePosition: src.pos,
-                targetX: tgt.x + tgtOff,
-                targetY: tgt.y,
-                targetPosition: tgt.pos,
-                borderRadius: 0,
-            });
-        }
-        const pts = parseCrossingPts(d);
-        const segs = [];
-        for (let i = 0; i < pts.length - 1; i++) {
-            segs.push({ x1: pts[i][0], y1: pts[i][1], x2: pts[i + 1][0], y2: pts[i + 1][1] });
-        }
-        infos.push({ id: edge.id, segs });
-    }
-
-    const result = new Map<string, CrossPoint[]>();
-
-    for (let i = 0; i < infos.length; i++) {
-        for (let j = 0; j < infos.length; j++) {
-            if (i === j) continue;
-            for (const sA of infos[i].segs) {
-                if (Math.abs(sA.y1 - sA.y2) > 0.5) continue; // only H segs of A
-                for (const sB of infos[j].segs) {
-                    if (Math.abs(sB.x1 - sB.x2) > 0.5) continue; // only V segs of B
-                    const x = sB.x1, y = sA.y1;
-                    const loAx = Math.min(sA.x1, sA.x2), hiAx = Math.max(sA.x1, sA.x2);
-                    const loBy = Math.min(sB.y1, sB.y2), hiBy = Math.max(sB.y1, sB.y2);
-                    if (x > loAx && x < hiAx && y > loBy && y < hiBy) {
-                        if (!result.has(infos[i].id)) result.set(infos[i].id, []);
-                        result.get(infos[i].id)!.push({ x, y });
-                    }
-                }
-            }
-        }
-    }
-
-    // Deduplicate crossing points per edge
-    for (const [id, pts] of result) {
-        const seen = new Set<string>();
-        result.set(id, pts.filter(p => {
-            const k = `${Math.round(p.x)},${Math.round(p.y)}`;
-            return seen.has(k) ? false : (seen.add(k), true);
-        }));
-    }
-
-    return result;
-}
+import ArrowEdge from './ArrowEdge';
+import { buildGraph, tableKey } from './diagramLayout';
+import { computeCrossings, resolveCollisions, routeEdgesInGraph } from './edgeRouting';
+import type { CrossPoint } from './edgeRouting';
 
 const nodeTypes = { table: TableNode };
-const edgeTypes = { crowsfoot: CrowsFootEdge };
+const edgeTypes = { crowsfoot: CrowsFootEdge, arrow: ArrowEdge };
 
 type Props = { payload: DiagramPayload };
 
@@ -190,10 +31,6 @@ export default function Diagram(props: Props) {
             <DiagramInner {...props} />
         </ReactFlowProvider>
     );
-}
-
-function tableKey(t: { schema: string | null; name: string }) {
-    return `${t.schema ?? ''}.${t.name}`;
 }
 
 function DiagramInner({ payload }: Props) {
@@ -242,22 +79,41 @@ function DiagramInner({ payload }: Props) {
             if (c.position) posMap.set(c.id, c.position);
         }
 
-        setEdges(eds => eds.map(edge => {
-            if (!edge.sourceHandle || !edge.targetHandle) return edge;
-            const srcPos = posMap.get(edge.source);
-            const tgtPos = posMap.get(edge.target);
-            if (!srcPos || !tgtPos) return edge;
-            const srcIsLeft = srcPos.x < tgtPos.x;
-            const srcCol = edge.sourceHandle.replace(/-s[lr]$/, '');
-            const tgtCol = edge.targetHandle.replace(/-t[lr]$/, '');
-            const newSrc = `${srcCol}-s${srcIsLeft ? 'r' : 'l'}`;
-            const newTgt = `${tgtCol}-t${srcIsLeft ? 'l' : 'r'}`;
-            if (newSrc === edge.sourceHandle && newTgt === edge.targetHandle) return edge;
-            // Clear manual vx routing when sides flip — it was computed for the old layout
-            const { vx: _removed, ...restData } = (edge.data ?? {}) as Record<string, unknown>;
-            return { ...edge, sourceHandle: newSrc, targetHandle: newTgt, data: restData };
-        }));
+        const updatedNodes = nodes.map(n => {
+            const newPos = posMap.get(n.id);
+            return newPos ? { ...n, position: newPos } : n;
+        });
+
+        setEdges(eds => {
+            const flipped = eds.map(edge => {
+                if (!edge.sourceHandle || !edge.targetHandle) return edge;
+                const srcPos = posMap.get(edge.source);
+                const tgtPos = posMap.get(edge.target);
+                if (!srcPos || !tgtPos) return edge;
+                const srcIsLeft = srcPos.x < tgtPos.x;
+                const srcCol = edge.sourceHandle.replace(/-s[lr]$/, '');
+                const tgtCol = edge.targetHandle.replace(/-t[lr]$/, '');
+                const newSrc = `${srcCol}-s${srcIsLeft ? 'r' : 'l'}`;
+                const newTgt = `${tgtCol}-t${srcIsLeft ? 'l' : 'r'}`;
+                if (newSrc === edge.sourceHandle && newTgt === edge.targetHandle) return edge;
+                const { vx: _v, vxManual: _m, ...restData } = (edge.data ?? {}) as Record<string, unknown>;
+                return { ...edge, sourceHandle: newSrc, targetHandle: newTgt, data: restData };
+            });
+            return routeEdgesInGraph(updatedNodes, flipped);
+        });
     }, [onNodesChange, nodes, setEdges]);
+
+    const onNodeDragStop = useCallback((_: React.MouseEvent, _node: TableNodeType, draggedNodes: TableNodeType[]) => {
+        console.debug(`[drag-stop] dragged=${draggedNodes.map(n => n.id).join(',')}`);
+        const dragMap = new Map(draggedNodes.map(n => [n.id, n]));
+        const merged = nodes.map(n => dragMap.has(n.id) ? { ...n, position: dragMap.get(n.id)!.position } : n);
+        const resolved = resolveCollisions(merged);
+        const movedIds = resolved.filter((n, i) => n.position.x !== merged[i].position.x || n.position.y !== merged[i].position.y).map(n => n.id);
+        if (movedIds.length) console.debug(`[drag-stop] collision-resolved nodes: ${movedIds.join(',')}`);
+        console.debug(`[drag-stop] calling routeEdgesInGraph`);
+        setNodes(resolved);
+        setEdges(eds => routeEdgesInGraph(resolved, eds));
+    }, [nodes, setNodes, setEdges]);
 
     const exportPng = useCallback(async () => {
         if (!flowRef.current) return;
@@ -370,6 +226,7 @@ function DiagramInner({ payload }: Props) {
                         edges={edges}
                         onNodesChange={onNodesChangeWithEdgeFlip}
                         onEdgesChange={onEdgesChange}
+                        onNodeDragStop={onNodeDragStop}
                         nodeTypes={nodeTypes}
                         edgeTypes={edgeTypes}
                         fitView
@@ -404,87 +261,4 @@ function DiagramInner({ payload }: Props) {
             </div>
         </CrossingsCtx.Provider>
     );
-}
-
-function buildGraph(payload: DiagramPayload, crowsFoot: boolean): { initialNodes: TableNodeType[]; initialEdges: Edge[] } {
-    const seen = new Map<string, TableSchema>();
-    for (const t of payload.tables) {
-        const key = tableKey(t);
-        if (!seen.has(key)) seen.set(key, t);
-    }
-
-    const g = new dagre.graphlib.Graph();
-    g.setGraph({ rankdir: 'LR', nodesep: 60, ranksep: 120 });
-    g.setDefaultEdgeLabel(() => ({}));
-
-    const uqDataMap = new Map<string, { labels: Map<string, string>; groups: Map<string, string[]> }>();
-    for (const [key, t] of seen) {
-        uqDataMap.set(key, buildUqLabelsAndGroups(t.uniqueConstraints ?? []));
-    }
-
-    const widths = new Map<string, number>();
-    for (const [key, t] of seen) {
-        const fkCols = new Set<string>();
-        for (const fk of t.foreignKeys) for (const c of fk.columns) fkCols.add(c);
-        const w = computeNodeWidth(t, fkCols, uqDataMap.get(key)!.labels);
-        widths.set(key, w);
-        g.setNode(key, { width: w, height: HEADER_HEIGHT + t.columns.length * ROW_HEIGHT });
-    }
-
-    const referencedColumnsMap = new Map<string, Set<string>>();
-    const connectedFkColumnsMap = new Map<string, Set<string>>();
-    const edges: Edge[] = [];
-    let edgeId = 0;
-    for (const [key, t] of seen) {
-        for (const fk of t.foreignKeys) {
-            const target = `${fk.refSchema ?? ''}.${fk.refTable}`;
-            if (!seen.has(target)) continue;
-            g.setEdge(key, target);
-            edges.push({
-                id: `e${edgeId++}`,
-                source: key,
-                target,
-                sourceHandle: `${fk.columns[0]}-sr`,
-                targetHandle: `${fk.refColumns[0]}-tl`,
-                type: crowsFoot ? 'crowsfoot' : undefined,
-                markerEnd: crowsFoot ? undefined : { type: MarkerType.ArrowClosed },
-                label: fk.columns.length > 1 ? `(${fk.columns.join(', ')})` : undefined
-            });
-            if (!connectedFkColumnsMap.has(key)) connectedFkColumnsMap.set(key, new Set());
-            for (const c of fk.columns) connectedFkColumnsMap.get(key)!.add(c);
-            if (!referencedColumnsMap.has(target)) referencedColumnsMap.set(target, new Set());
-            for (const c of fk.refColumns) referencedColumnsMap.get(target)!.add(c);
-        }
-    }
-
-    dagre.layout(g);
-
-    const nodes: TableNodeType[] = [...seen.entries()].map(([key, t]) => {
-        const pos = g.node(key);
-        const fkColumns = new Set<string>();
-        for (const fk of t.foreignKeys) for (const c of fk.columns) fkColumns.add(c);
-        const width = widths.get(key) ?? MIN_NODE_WIDTH;
-        return {
-            id: key,
-            type: 'table',
-            position: {
-                x: pos.x - width / 2,
-                y: pos.y - (HEADER_HEIGHT + t.columns.length * ROW_HEIGHT) / 2
-            },
-            data: {
-                schema: t.schema,
-                name: t.name,
-                columns: t.columns,
-                fkColumns,
-                connectedFkColumns: connectedFkColumnsMap.get(key) ?? new Set(),
-                referencedColumns: referencedColumnsMap.get(key) ?? new Set(),
-                isRoot: payload.rootKey === key,
-                width,
-                uqLabels: uqDataMap.get(key)!.labels,
-                uqGroups: uqDataMap.get(key)!.groups,
-            }
-        };
-    });
-
-    return { initialNodes: nodes, initialEdges: edges };
 }

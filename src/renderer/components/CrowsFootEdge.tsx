@@ -1,5 +1,7 @@
 import { createContext, useContext, useState, useCallback } from 'react';
-import { getSmoothStepPath, EdgeLabelRenderer, useReactFlow, Position, type EdgeProps } from '@xyflow/react';
+import { EdgeLabelRenderer, useReactFlow, Position, type EdgeProps } from '@xyflow/react';
+import { routeEdgesInGraph, parseCrossingPts, buildEdgePathD, findVxHandle } from './edgeRouting';
+import type { TableNodeType } from './TableNode';
 
 const OFFSET = 20;
 const CF_SPREAD = 7;
@@ -9,17 +11,25 @@ const JUMP_R = 6;
 type Point = { x: number; y: number };
 export const CrossingsCtx = createContext<Map<string, Point[]>>(new Map());
 
-function parsePts(d: string): [number, number][] {
-    const pts: [number, number][] = [];
-    const re = /[ML]\s*([-\d.e+]+)[,\s]+([-\d.e+]+)/g;
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(d)) !== null) pts.push([+m[1], +m[2]]);
-    return pts;
+// Remove intermediate collinear points on horizontal runs so that a degenerate
+// path like M sx sy L vx sy L vx sy L tx sy (sy==ty) is treated as one segment.
+function mergeCollinearH(pts: [number, number][]): [number, number][] {
+    if (pts.length < 3) return pts;
+    const out: [number, number][] = [pts[0]];
+    for (let i = 1; i < pts.length - 1; i++) {
+        const prev = out[out.length - 1];
+        const curr = pts[i];
+        const next = pts[i + 1];
+        if (Math.abs(prev[1] - curr[1]) < 0.5 && Math.abs(curr[1] - next[1]) < 0.5) continue;
+        out.push(curr);
+    }
+    out.push(pts[pts.length - 1]);
+    return out;
 }
 
 function applyJumps(d: string, crosses: Point[]): string {
     if (!crosses.length) return d;
-    const pts = parsePts(d);
+    const pts = mergeCollinearH(parseCrossingPts(d));
     if (pts.length < 2) return d;
     let out = `M ${pts[0][0]} ${pts[0][1]}`;
     for (let i = 0; i < pts.length - 1; i++) {
@@ -43,6 +53,61 @@ function applyJumps(d: string, crosses: Point[]): string {
     return out;
 }
 
+export function useEdgeVxDrag(id: string) {
+    const { setEdges, screenToFlowPosition, getNodes } = useReactFlow();
+
+    const onPointerDown = useCallback((e: React.PointerEvent<SVGCircleElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+        e.currentTarget.setPointerCapture(e.pointerId);
+    }, []);
+
+    const onPointerMove = useCallback((e: React.PointerEvent<SVGCircleElement>) => {
+        if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
+        const rawVx = screenToFlowPosition({ x: e.clientX, y: e.clientY }).x;
+        const nodes = getNodes() as TableNodeType[];
+        setEdges(eds => {
+            // Push vx away from other edges' vx — coincident V segments break arch detection
+            const MIN_VX_SEP = 14; // > 2 * JUMP_R = 12
+            const newVx = eds.reduce((v, ed) => {
+                if (ed.id === id) return v;
+                const ov = (ed.data as { vx?: number } | undefined)?.vx;
+                if (ov === undefined) return v;
+                return Math.abs(v - ov) < MIN_VX_SEP ? ov + (v >= ov ? MIN_VX_SEP : -MIN_VX_SEP) : v;
+            }, rawVx);
+            const updated = eds.map(ed => {
+                if (ed.id !== id) return ed;
+                const newData = { ...(ed.data ?? {}), vx: newVx, vxManual: true };
+                if (!ed.sourceHandle || !ed.targetHandle) return { ...ed, data: newData };
+                const srcNode = nodes.find(n => n.id === ed.source);
+                const tgtNode = nodes.find(n => n.id === ed.target);
+                if (!srcNode || !tgtNode) return { ...ed, data: newData };
+                const srcW = (srcNode.data as { width?: number }).width ?? (srcNode.measured?.width ?? 0);
+                const tgtW = (tgtNode.data as { width?: number }).width ?? (tgtNode.measured?.width ?? 0);
+                const srcCx = srcNode.position.x + srcW / 2;
+                const tgtCx = tgtNode.position.x + tgtW / 2;
+                const srcCol = ed.sourceHandle.replace(/-s[lr]$/, '');
+                const tgtCol = ed.targetHandle.replace(/-t[lr]$/, '');
+                const newSrcHandle = `${srcCol}-s${srcCx < newVx ? 'r' : 'l'}`;
+                const newTgtHandle = `${tgtCol}-t${tgtCx > newVx ? 'l' : 'r'}`;
+                return { ...ed, data: newData, sourceHandle: newSrcHandle, targetHandle: newTgtHandle };
+            });
+            return routeEdgesInGraph(nodes, updated);
+        });
+    }, [id, setEdges, screenToFlowPosition, getNodes]);
+
+    const onDblClick = useCallback((e: React.MouseEvent) => {
+        e.stopPropagation();
+        setEdges(eds => eds.map(ed => {
+            if (ed.id !== id) return ed;
+            const { vx: _v, vxManual: _m, ...rest } = (ed.data ?? {}) as Record<string, unknown>;
+            return { ...ed, data: rest };
+        }));
+    }, [id, setEdges]);
+
+    return { onPointerDown, onPointerMove, onDblClick };
+}
+
 export default function CrowsFootEdge({
     id,
     sourceX, sourceY,
@@ -54,88 +119,35 @@ export default function CrowsFootEdge({
 }: EdgeProps) {
     const stroke = selected ? 'var(--accent)' : 'var(--muted)';
     const allCrossings = useContext(CrossingsCtx);
-    const { setEdges, screenToFlowPosition, getNodes } = useReactFlow();
     const [hovered, setHovered] = useState(false);
+    const { onPointerDown: onHandlePointerDown, onPointerMove: onHandlePointerMove, onDblClick: onHandleDblClick } = useEdgeVxDrag(id);
 
-    const vx = (data as { vx?: number } | undefined)?.vx;
+    const edgeDataTyped = data as { vx?: number; vy?: number; vx2?: number } | undefined;
+    const vx = edgeDataTyped?.vx;
+    const vy = edgeDataTyped?.vy;
+    const vx2 = edgeDataTyped?.vx2;
 
     const srcOff = sourcePosition === Position.Right ? OFFSET : -OFFSET;
     const tgtOff = targetPosition === Position.Left ? -OFFSET : OFFSET;
-
-    let rawPath: string;
-    let labelX: number, labelY: number;
-
-    if (vx !== undefined) {
-        const sx = sourceX + srcOff, tx = targetX + tgtOff;
-        rawPath = `M ${sx} ${sourceY} L ${vx} ${sourceY} L ${vx} ${targetY} L ${tx} ${targetY}`;
-        labelX = vx;
-        labelY = (sourceY + targetY) / 2;
-    } else {
-        [rawPath, labelX, labelY] = getSmoothStepPath({
-            sourceX: sourceX + srcOff,
-            sourceY,
-            sourcePosition,
-            targetX: targetX + tgtOff,
-            targetY,
-            targetPosition,
-            borderRadius: 0,
-        });
-    }
+    const srcR = srcOff > 0, tgtL = tgtOff < 0;
+    const { path: rawPath, labelX, labelY } = buildEdgePathD(
+        sourceX + srcOff, sourceY,
+        targetX + tgtOff, targetY,
+        srcR, tgtL,
+        sourcePosition, targetPosition,
+        vx, vy, vx2,
+    );
 
     const edgePath = applyJumps(rawPath, allCrossings.get(id) ?? []);
 
-    // Find the first substantial vertical segment for the drag handle
-    const pts = parsePts(rawPath);
+    const pts = parseCrossingPts(rawPath);
     let handleX: number | undefined, handleMidY: number | undefined;
-    for (let i = 0; i < pts.length - 1; i++) {
-        const [x1, y1] = pts[i];
-        const [x2, y2] = pts[i + 1];
-        if (Math.abs(x1 - x2) < 0.5 && Math.abs(y1 - y2) > 4) {
-            handleX = x1;
-            handleMidY = (y1 + y2) / 2;
-            break;
-        }
+    // No drag handle in 5-seg detour mode — vx alone doesn't describe the path
+    if (vy === undefined) {
+        const h = findVxHandle(pts);
+        if (h) { handleX = h.handleX; handleMidY = h.handleMidY; }
     }
 
-    const onHandlePointerDown = useCallback((e: React.PointerEvent<SVGCircleElement>) => {
-        e.preventDefault();
-        e.stopPropagation();
-        e.currentTarget.setPointerCapture(e.pointerId);
-    }, []);
-
-    const onHandlePointerMove = useCallback((e: React.PointerEvent<SVGCircleElement>) => {
-        if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
-        const newVx = screenToFlowPosition({ x: e.clientX, y: e.clientY }).x;
-        setEdges(eds => eds.map(ed => {
-            if (ed.id !== id) return ed;
-            const newData = { ...(ed.data ?? {}), vx: newVx };
-            if (!ed.sourceHandle || !ed.targetHandle) return { ...ed, data: newData };
-            const nodes = getNodes();
-            const srcNode = nodes.find(n => n.id === ed.source);
-            const tgtNode = nodes.find(n => n.id === ed.target);
-            if (!srcNode || !tgtNode) return { ...ed, data: newData };
-            const srcW = (srcNode.data as { width?: number }).width ?? (srcNode.measured?.width ?? 0);
-            const tgtW = (tgtNode.data as { width?: number }).width ?? (tgtNode.measured?.width ?? 0);
-            const srcCx = srcNode.position.x + srcW / 2;
-            const tgtCx = tgtNode.position.x + tgtW / 2;
-            const srcCol = ed.sourceHandle.replace(/-s[lr]$/, '');
-            const tgtCol = ed.targetHandle.replace(/-t[lr]$/, '');
-            const newSrcHandle = `${srcCol}-s${srcCx < newVx ? 'r' : 'l'}`;
-            const newTgtHandle = `${tgtCol}-t${tgtCx > newVx ? 'l' : 'r'}`;
-            return { ...ed, data: newData, sourceHandle: newSrcHandle, targetHandle: newTgtHandle };
-        }));
-    }, [id, setEdges, screenToFlowPosition, getNodes]);
-
-    const onHandleDblClick = useCallback((e: React.MouseEvent) => {
-        e.stopPropagation();
-        setEdges(eds => eds.map(ed => {
-            if (ed.id !== id) return ed;
-            const { vx: _removed, ...rest } = (ed.data ?? {}) as Record<string, unknown>;
-            return { ...ed, data: rest };
-        }));
-    }, [id, setEdges]);
-
-    // Crow's foot (many) at source — direction depends on which side the handle is on
     const cSign = sourcePosition === Position.Right ? 1 : -1;
     const crowsPath = [
         `M ${sourceX + 10 * cSign} ${sourceY} L ${sourceX} ${sourceY - CF_SPREAD}`,
@@ -144,7 +156,6 @@ export default function CrowsFootEdge({
         `M ${sourceX + 15 * cSign} ${sourceY - BAR_HALF} L ${sourceX + 15 * cSign} ${sourceY + BAR_HALF}`,
     ].join(' ');
 
-    // "One" (exactly one) at target
     const oSign = targetPosition === Position.Left ? -1 : 1;
     const onePath = [
         `M ${targetX + 10 * oSign} ${targetY - BAR_HALF} L ${targetX + 10 * oSign} ${targetY + BAR_HALF}`,
