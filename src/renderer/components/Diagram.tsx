@@ -9,13 +9,16 @@ import {
   useNodesState,
   useEdgesState,
   useReactFlow,
-  MarkerType
+  MarkerType,
+  Position,
+  getSmoothStepPath,
 } from '@xyflow/react';
 import type { Edge } from '@xyflow/react';
 import dagre from 'dagre';
 import { toPng } from 'html-to-image';
 import type { DiagramPayload, TableSchema } from '@shared/schema';
 import TableNode, { type TableNodeType } from './TableNode';
+import CrowsFootEdge, { CrossingsCtx } from './CrowsFootEdge';
 
 const ROW_HEIGHT = 28;
 const HEADER_HEIGHT = 40;
@@ -56,7 +59,97 @@ function computeNodeWidth(table: TableSchema, fkColumns: Set<string>): number {
   return Math.min(MAX_NODE_WIDTH, Math.max(MIN_NODE_WIDTH, Math.ceil(widest)));
 }
 
+const CF_OFFSET = 20; // must match OFFSET in CrowsFootEdge
+
+function getHandlePos(
+  nodes: TableNodeType[],
+  nodeId: string,
+  handleId: string,
+): { x: number; y: number; pos: Position } | null {
+  const node = nodes.find(n => n.id === nodeId);
+  if (!node) return null;
+  const colName = handleId.replace(/-[lr]$/, '');
+  const isRight = handleId.endsWith('-r');
+  const idx = node.data.columns.findIndex(c => c.name === colName);
+  if (idx < 0) return null;
+  return {
+    x: isRight ? node.position.x + node.data.width : node.position.x,
+    y: node.position.y + HEADER_HEIGHT + idx * ROW_HEIGHT + ROW_HEIGHT / 2,
+    pos: isRight ? Position.Right : Position.Left,
+  };
+}
+
+function parseCrossingPts(d: string): [number, number][] {
+  const pts: [number, number][] = [];
+  const re = /[ML]\s*([-\d.e+]+)[,\s]+([-\d.e+]+)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(d)) !== null) pts.push([+m[1], +m[2]]);
+  return pts;
+}
+
+type CrossPoint = { x: number; y: number };
+
+function computeCrossings(nodes: TableNodeType[], edges: Edge[]): Map<string, CrossPoint[]> {
+  type PathInfo = { id: string; segs: { x1: number; y1: number; x2: number; y2: number }[] };
+  const infos: PathInfo[] = [];
+
+  for (const edge of edges) {
+    if (edge.type !== 'crowsfoot' || !edge.sourceHandle || !edge.targetHandle) continue;
+    const src = getHandlePos(nodes, edge.source, edge.sourceHandle);
+    const tgt = getHandlePos(nodes, edge.target, edge.targetHandle);
+    if (!src || !tgt) continue;
+    const [d] = getSmoothStepPath({
+      sourceX: src.x + CF_OFFSET,
+      sourceY: src.y,
+      sourcePosition: src.pos,
+      targetX: tgt.x - CF_OFFSET,
+      targetY: tgt.y,
+      targetPosition: tgt.pos,
+      borderRadius: 0,
+    });
+    const pts = parseCrossingPts(d);
+    const segs = [];
+    for (let i = 0; i < pts.length - 1; i++) {
+      segs.push({ x1: pts[i][0], y1: pts[i][1], x2: pts[i + 1][0], y2: pts[i + 1][1] });
+    }
+    infos.push({ id: edge.id, segs });
+  }
+
+  const result = new Map<string, CrossPoint[]>();
+
+  for (let i = 0; i < infos.length; i++) {
+    for (let j = 0; j < infos.length; j++) {
+      if (i === j) continue;
+      for (const sA of infos[i].segs) {
+        if (Math.abs(sA.y1 - sA.y2) > 0.5) continue; // only H segs of A
+        for (const sB of infos[j].segs) {
+          if (Math.abs(sB.x1 - sB.x2) > 0.5) continue; // only V segs of B
+          const x = sB.x1, y = sA.y1;
+          const loAx = Math.min(sA.x1, sA.x2), hiAx = Math.max(sA.x1, sA.x2);
+          const loBy = Math.min(sB.y1, sB.y2), hiBy = Math.max(sB.y1, sB.y2);
+          if (x > loAx && x < hiAx && y > loBy && y < hiBy) {
+            if (!result.has(infos[i].id)) result.set(infos[i].id, []);
+            result.get(infos[i].id)!.push({ x, y });
+          }
+        }
+      }
+    }
+  }
+
+  // Deduplicate crossing points per edge
+  for (const [id, pts] of result) {
+    const seen = new Set<string>();
+    result.set(id, pts.filter(p => {
+      const k = `${Math.round(p.x)},${Math.round(p.y)}`;
+      return seen.has(k) ? false : (seen.add(k), true);
+    }));
+  }
+
+  return result;
+}
+
 const nodeTypes = { table: TableNode };
+const edgeTypes = { crowsfoot: CrowsFootEdge };
 
 type Props = { payload: DiagramPayload };
 
@@ -76,6 +169,7 @@ function DiagramInner({ payload }: Props) {
   const flowRef = useRef<HTMLDivElement>(null);
   const { fitView } = useReactFlow();
   const [snap, setSnap] = useState(true);
+  const [crowsFoot, setCrowsFoot] = useState(false);
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
   const [filterSearch, setFilterSearch] = useState('');
 
@@ -85,9 +179,17 @@ function DiagramInner({ payload }: Props) {
     return { tables, rootKey: payload.rootKey };
   }, [payload, selectedKeys]);
 
-  const { initialNodes, initialEdges } = useMemo(() => buildGraph(filteredPayload), [filteredPayload]);
+  const { initialNodes, initialEdges } = useMemo(
+    () => buildGraph(filteredPayload, crowsFoot),
+    [filteredPayload, crowsFoot]
+  );
   const [nodes, setNodes, onNodesChange] = useNodesState<TableNodeType>(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(initialEdges);
+
+  const crossings = useMemo(
+    () => crowsFoot ? computeCrossings(nodes, edges) : new Map<string, CrossPoint[]>(),
+    [nodes, edges, crowsFoot],
+  );
 
   useEffect(() => {
     setNodes(initialNodes);
@@ -141,6 +243,7 @@ function DiagramInner({ payload }: Props) {
   };
 
   return (
+    <CrossingsCtx.Provider value={crossings}>
     <div className="diagram-wrap">
       <div className="diagram-toolbar">
         <details className="filter-dropdown">
@@ -207,6 +310,7 @@ function DiagramInner({ payload }: Props) {
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
           fitView
           snapToGrid={snap}
           snapGrid={[20, 20]}
@@ -219,15 +323,17 @@ function DiagramInner({ payload }: Props) {
               title={snap ? 'Snap to grid: on' : 'Snap to grid: off'}
               className={snap ? 'snap-on' : ''}
             >
-              <svg
-                viewBox="0 0 16 16"
-                width="12"
-                height="12"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
-              >
+              <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.5">
                 <path d="M2 6h12M2 10h12M6 2v12M10 2v12" />
+              </svg>
+            </ControlButton>
+            <ControlButton
+              onClick={() => setCrowsFoot((s) => !s)}
+              title={crowsFoot ? "Crow's foot: on" : "Crow's foot: off"}
+              className={crowsFoot ? 'crowsfoot-on' : ''}
+            >
+              <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                <path d="M8 8 L2 4M8 8 L2 8M8 8 L2 12M10 3 L10 13" />
               </svg>
             </ControlButton>
           </Controls>
@@ -235,10 +341,11 @@ function DiagramInner({ payload }: Props) {
         </ReactFlow>
       </div>
     </div>
+    </CrossingsCtx.Provider>
   );
 }
 
-function buildGraph(payload: DiagramPayload): { initialNodes: TableNodeType[]; initialEdges: Edge[] } {
+function buildGraph(payload: DiagramPayload, crowsFoot: boolean): { initialNodes: TableNodeType[]; initialEdges: Edge[] } {
   const seen = new Map<string, TableSchema>();
   for (const t of payload.tables) {
     const key = tableKey(t);
@@ -273,7 +380,8 @@ function buildGraph(payload: DiagramPayload): { initialNodes: TableNodeType[]; i
         target,
         sourceHandle: `${fk.columns[0]}-r`,
         targetHandle: `${fk.refColumns[0]}-l`,
-        markerEnd: { type: MarkerType.ArrowClosed },
+        type: crowsFoot ? 'crowsfoot' : undefined,
+        markerEnd: crowsFoot ? undefined : { type: MarkerType.ArrowClosed },
         label: fk.columns.length > 1 ? `(${fk.columns.join(', ')})` : undefined
       });
       if (!connectedFkColumnsMap.has(key)) connectedFkColumnsMap.set(key, new Set());

@@ -38,6 +38,7 @@ button {
   font: inherit; font-weight: 500; cursor: pointer;
 }
 button:disabled { opacity: 0.5; cursor: not-allowed; }
+
 button.btn-link {
   background: transparent; color: var(--accent); padding: 4px 8px; font-weight: 400;
 }
@@ -147,12 +148,14 @@ input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1
 .filter-list .schema { color: var(--muted); }
 .filter-list .empty { padding: 8px; color: var(--muted); font-size: 13px; }
 
-.react-flow__controls-button.snap-on {
+.react-flow__controls-button.snap-on,
+.react-flow__controls-button.crowsfoot-on {
   background: var(--accent);
   color: var(--accent-fg);
   fill: var(--accent-fg);
 }
-.react-flow__controls-button.snap-on:hover { background: var(--accent); }
+.react-flow__controls-button.snap-on:hover,
+.react-flow__controls-button.crowsfoot-on:hover { background: var(--accent); }
 .diagram { flex: 1; min-height: 0; background: var(--bg); }
 
 .table-node {
