@@ -1,5 +1,6 @@
 import { Client } from 'ssh2';
 import { createServer, type Socket } from 'node:net';
+import log from 'electron-log/main';
 import type { SshConfig } from '@shared/schema';
 
 export type Tunnel = {
@@ -19,6 +20,7 @@ export function openTunnel(ssh: SshConfig, dest: DestConfig): Promise<Tunnel> {
     const fail = (err: Error) => {
       if (settled) return;
       settled = true;
+      log.error('SSH tunnel error', err);
       try {
         client.end();
       } catch {
@@ -38,6 +40,7 @@ export function openTunnel(ssh: SshConfig, dest: DestConfig): Promise<Tunnel> {
           dest.port,
           (err, stream) => {
             if (err) {
+              log.error('SSH forwardOut failed', err);
               socket.destroy();
               return;
             }

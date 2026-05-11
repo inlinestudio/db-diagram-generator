@@ -10,6 +10,9 @@ import * as connections from './connections';
 log.initialize();
 log.transports.file.level = 'debug';
 
+process.on('uncaughtException', (err) => log.error('uncaughtException', err));
+process.on('unhandledRejection', (reason) => log.error('unhandledRejection', reason));
+
 const { autoUpdater } = pkg;
 autoUpdater.logger = log;
 

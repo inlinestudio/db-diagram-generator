@@ -1,4 +1,5 @@
 import type { ConnectionConfig } from '@shared/schema';
+import log from 'electron-log/main';
 import { DemoAdapter } from './demo';
 import { PostgresAdapter } from './postgres';
 import { MysqlAdapter } from './mysql';
@@ -32,7 +33,12 @@ export async function connect(cfg: ConnectionConfig) {
   let tunnel: Tunnel | null = null;
 
   if (cfg.dialect !== 'demo' && cfg.dialect !== 'sqlite' && cfg.ssh) {
-    tunnel = await openTunnel(cfg.ssh, { host: cfg.host, port: cfg.port });
+    try {
+      tunnel = await openTunnel(cfg.ssh, { host: cfg.host, port: cfg.port });
+    } catch (err) {
+      log.error('SSH tunnel failed', err);
+      throw err;
+    }
     effectiveCfg = { ...cfg, host: '127.0.0.1', port: tunnel.localPort };
     delete (effectiveCfg as { ssh?: unknown }).ssh;
   }
@@ -43,6 +49,7 @@ export async function connect(cfg: ConnectionConfig) {
     current = adapter;
     currentTunnel = tunnel;
   } catch (err) {
+    log.error(`${cfg.dialect} connect failed`, err);
     if (tunnel) await tunnel.close().catch(() => {});
     throw err;
   }
