@@ -41,139 +41,158 @@ export class PostgresAdapter implements DbAdapter {
         return res.rows;
     }
 
-    private async loadTable(schema: string, name: string): Promise<TableSchema> {
-        const cols = await this.c().query<{
-            column_name: string;
-            data_type: string;
-            is_nullable: 'YES' | 'NO';
-            column_default: string | null;
-            udt_name: string;
-            character_maximum_length: number | null;
-            numeric_precision: number | null;
-            numeric_scale: number | null;
-        }>(
-            `SELECT column_name, data_type, is_nullable, column_default, udt_name,
-              character_maximum_length, numeric_precision, numeric_scale
-         FROM information_schema.columns
-        WHERE table_schema = $1 AND table_name = $2
-        ORDER BY ordinal_position`,
-            [schema, name]
-        );
+    private async loadAllTables(refs: TableRef[]): Promise<TableSchema[]> {
+        const EXCL = `('pg_catalog','information_schema')`;
 
-        const pks = await this.c().query<{ column_name: string }>(
-            `SELECT a.attname AS column_name
-         FROM pg_index i
-         JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
-         JOIN pg_class c ON c.oid = i.indrelid
-         JOIN pg_namespace n ON n.oid = c.relnamespace
-        WHERE i.indisprimary AND n.nspname = $1 AND c.relname = $2`,
-            [schema, name]
-        );
-        const pkSet = new Set(pks.rows.map((r) => r.column_name));
+        const colRes = await this.c().query<{
+            table_schema: string; table_name: string;
+            column_name: string; data_type: string;
+            is_nullable: 'YES' | 'NO'; column_default: string | null;
+            udt_name: string; character_maximum_length: number | null;
+            numeric_precision: number | null; numeric_scale: number | null;
+        }>(`SELECT table_schema, table_name, column_name, data_type, is_nullable,
+                   column_default, udt_name, character_maximum_length, numeric_precision, numeric_scale
+              FROM information_schema.columns
+             WHERE table_schema NOT IN ${EXCL}
+             ORDER BY table_schema, table_name, ordinal_position`);
 
-        const uqs = await this.c().query<{ constraint_oid: number; column_name: string }>(
-            `SELECT con.oid AS constraint_oid, a.attname AS column_name
-         FROM pg_constraint con
-         JOIN pg_class c ON c.oid = con.conrelid
-         JOIN pg_namespace n ON n.oid = c.relnamespace
-         JOIN unnest(con.conkey) WITH ORDINALITY AS u(attnum, ord) ON true
-         JOIN pg_attribute a ON a.attrelid = con.conrelid AND a.attnum = u.attnum
-        WHERE con.contype = 'u' AND n.nspname = $1 AND c.relname = $2
-        ORDER BY con.oid, u.ord`,
-            [schema, name]
-        );
-        const uqMap = new Map<number, string[]>();
-        for (const r of uqs.rows) {
-            if (!uqMap.has(r.constraint_oid)) uqMap.set(r.constraint_oid, []);
-            uqMap.get(r.constraint_oid)!.push(r.column_name);
+        const pkRes = await this.c().query<{ schema: string; table_name: string; column_name: string }>(
+            `SELECT n.nspname AS schema, c.relname AS table_name, a.attname AS column_name
+               FROM pg_index i
+               JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
+               JOIN pg_class c ON c.oid = i.indrelid
+               JOIN pg_namespace n ON n.oid = c.relnamespace
+              WHERE i.indisprimary AND n.nspname NOT IN ${EXCL}`);
+
+        const uqRes = await this.c().query<{ schema: string; table_name: string; constraint_oid: number; column_name: string }>(
+            `SELECT n.nspname AS schema, c.relname AS table_name, con.oid AS constraint_oid, a.attname AS column_name
+               FROM pg_constraint con
+               JOIN pg_class c ON c.oid = con.conrelid
+               JOIN pg_namespace n ON n.oid = c.relnamespace
+               JOIN unnest(con.conkey) WITH ORDINALITY AS u(attnum, ord) ON true
+               JOIN pg_attribute a ON a.attrelid = con.conrelid AND a.attnum = u.attnum
+              WHERE con.contype = 'u' AND n.nspname NOT IN ${EXCL}
+              ORDER BY n.nspname, c.relname, con.oid, u.ord`);
+
+        const fkRes = await this.c().query<{
+            schema: string; table_name: string; conname: string;
+            cols: string[]; ref_schema: string; ref_table: string; ref_cols: string[];
+            on_delete: string; on_update: string;
+        }>(`SELECT n.nspname AS schema, c.relname AS table_name, con.conname,
+                   array_agg(att.attname::text ORDER BY u.ord) AS cols,
+                   rn.nspname AS ref_schema, rc.relname AS ref_table,
+                   array_agg(ratt.attname::text ORDER BY u.ord) AS ref_cols,
+                   con.confdeltype::text AS on_delete, con.confupdtype::text AS on_update
+              FROM pg_constraint con
+              JOIN pg_class c ON c.oid = con.conrelid
+              JOIN pg_namespace n ON n.oid = c.relnamespace
+              JOIN pg_class rc ON rc.oid = con.confrelid
+              JOIN pg_namespace rn ON rn.oid = rc.relnamespace
+              JOIN unnest(con.conkey, con.confkey) WITH ORDINALITY AS u(conkey, confkey, ord) ON true
+              JOIN pg_attribute att ON att.attrelid = con.conrelid AND att.attnum = u.conkey
+              JOIN pg_attribute ratt ON ratt.attrelid = con.confrelid AND ratt.attnum = u.confkey
+             WHERE con.contype = 'f' AND n.nspname NOT IN ${EXCL}
+             GROUP BY n.nspname, c.relname, con.conname, rn.nspname, rc.relname, con.confdeltype, con.confupdtype`);
+
+        const refByRes = await this.c().query<{
+            tgt_schema: string; tgt_table: string;
+            cols: string[]; ref_schema: string; ref_table: string; ref_cols: string[];
+        }>(`SELECT rn.nspname AS tgt_schema, rc.relname AS tgt_table,
+                   array_agg(att.attname::text ORDER BY u.ord) AS cols,
+                   n.nspname AS ref_schema, c.relname AS ref_table,
+                   array_agg(ratt.attname::text ORDER BY u.ord) AS ref_cols
+              FROM pg_constraint con
+              JOIN pg_class c ON c.oid = con.conrelid
+              JOIN pg_namespace n ON n.oid = c.relnamespace
+              JOIN pg_class rc ON rc.oid = con.confrelid
+              JOIN pg_namespace rn ON rn.oid = rc.relnamespace
+              JOIN unnest(con.conkey, con.confkey) WITH ORDINALITY AS u(conkey, confkey, ord) ON true
+              JOIN pg_attribute att ON att.attrelid = con.conrelid AND att.attnum = u.conkey
+              JOIN pg_attribute ratt ON ratt.attrelid = con.confrelid AND ratt.attnum = u.confkey
+             WHERE con.contype = 'f' AND rn.nspname NOT IN ${EXCL}
+             GROUP BY con.conname, rn.nspname, rc.relname, n.nspname, c.relname`);
+
+        const colsByTable = new Map<string, typeof colRes.rows>();
+        for (const r of colRes.rows) {
+            const k = `${r.table_schema}.${r.table_name}`;
+            if (!colsByTable.has(k)) colsByTable.set(k, []);
+            colsByTable.get(k)!.push(r);
         }
-        const uniqueConstraints = [...uqMap.values()];
-        const uqSet = new Set(uniqueConstraints.flat());
 
-        const columns: ColumnMeta[] = cols.rows.map((r) => ({
-            name: r.column_name,
-            dataType: formatPgType(r),
-            nullable: r.is_nullable === 'YES',
-            isPrimaryKey: pkSet.has(r.column_name),
-            isUnique: uqSet.has(r.column_name),
-            default: r.column_default,
-            comment: null
-        }));
+        const pksByTable = new Map<string, Set<string>>();
+        for (const r of pkRes.rows) {
+            const k = `${r.schema}.${r.table_name}`;
+            if (!pksByTable.has(k)) pksByTable.set(k, new Set());
+            pksByTable.get(k)!.add(r.column_name);
+        }
 
-        const fkRows = await this.c().query<{
-            conname: string;
-            cols: string[];
-            ref_schema: string;
-            ref_table: string;
-            ref_cols: string[];
-            on_delete: string;
-            on_update: string;
-        }>(
-            `SELECT con.conname,
-              array_agg(att.attname::text ORDER BY u.ord) AS cols,
-              rn.nspname AS ref_schema,
-              rc.relname AS ref_table,
-              array_agg(ratt.attname::text ORDER BY u.ord) AS ref_cols,
-              con.confdeltype::text AS on_delete,
-              con.confupdtype::text AS on_update
-         FROM pg_constraint con
-         JOIN pg_class c ON c.oid = con.conrelid
-         JOIN pg_namespace n ON n.oid = c.relnamespace
-         JOIN pg_class rc ON rc.oid = con.confrelid
-         JOIN pg_namespace rn ON rn.oid = rc.relnamespace
-         JOIN unnest(con.conkey, con.confkey) WITH ORDINALITY AS u(conkey, confkey, ord) ON true
-         JOIN pg_attribute att ON att.attrelid = con.conrelid AND att.attnum = u.conkey
-         JOIN pg_attribute ratt ON ratt.attrelid = con.confrelid AND ratt.attnum = u.confkey
-        WHERE con.contype = 'f' AND n.nspname = $1 AND c.relname = $2
-        GROUP BY con.conname, rn.nspname, rc.relname, con.confdeltype, con.confupdtype`,
-            [schema, name]
-        );
+        const uqsByTable = new Map<string, Map<number, string[]>>();
+        for (const r of uqRes.rows) {
+            const k = `${r.schema}.${r.table_name}`;
+            if (!uqsByTable.has(k)) uqsByTable.set(k, new Map());
+            const m = uqsByTable.get(k)!;
+            if (!m.has(r.constraint_oid)) m.set(r.constraint_oid, []);
+            m.get(r.constraint_oid)!.push(r.column_name);
+        }
 
-        const foreignKeys: ForeignKey[] = fkRows.rows.map((r) => ({
-            columns: r.cols,
-            refSchema: r.ref_schema,
-            refTable: r.ref_table,
-            refColumns: r.ref_cols,
-            onDelete: pgFkAction(r.on_delete),
-            onUpdate: pgFkAction(r.on_update)
-        }));
+        const fksByTable = new Map<string, ForeignKey[]>();
+        for (const r of fkRes.rows) {
+            const k = `${r.schema}.${r.table_name}`;
+            if (!fksByTable.has(k)) fksByTable.set(k, []);
+            fksByTable.get(k)!.push({
+                columns: r.cols,
+                refSchema: r.ref_schema,
+                refTable: r.ref_table,
+                refColumns: r.ref_cols,
+                onDelete: pgFkAction(r.on_delete),
+                onUpdate: pgFkAction(r.on_update)
+            });
+        }
 
-        const refRows = await this.c().query<{
-            cols: string[];
-            ref_schema: string;
-            ref_table: string;
-            ref_cols: string[];
-        }>(
-            `SELECT array_agg(att.attname::text ORDER BY u.ord) AS cols,
-              n.nspname AS ref_schema,
-              c.relname AS ref_table,
-              array_agg(ratt.attname::text ORDER BY u.ord) AS ref_cols
-         FROM pg_constraint con
-         JOIN pg_class c ON c.oid = con.conrelid
-         JOIN pg_namespace n ON n.oid = c.relnamespace
-         JOIN pg_class rc ON rc.oid = con.confrelid
-         JOIN pg_namespace rn ON rn.oid = rc.relnamespace
-         JOIN unnest(con.conkey, con.confkey) WITH ORDINALITY AS u(conkey, confkey, ord) ON true
-         JOIN pg_attribute att ON att.attrelid = con.conrelid AND att.attnum = u.conkey
-         JOIN pg_attribute ratt ON ratt.attrelid = con.confrelid AND ratt.attnum = u.confkey
-        WHERE con.contype = 'f' AND rn.nspname = $1 AND rc.relname = $2
-        GROUP BY con.conname, n.nspname, c.relname`,
-            [schema, name]
-        );
+        const refBysByTable = new Map<string, ForeignKey[]>();
+        for (const r of refByRes.rows) {
+            const k = `${r.tgt_schema}.${r.tgt_table}`;
+            if (!refBysByTable.has(k)) refBysByTable.set(k, []);
+            refBysByTable.get(k)!.push({
+                columns: r.cols,
+                refSchema: r.ref_schema,
+                refTable: r.ref_table,
+                refColumns: r.ref_cols
+            });
+        }
 
-        const referencedBy: ForeignKey[] = refRows.rows.map((r) => ({
-            columns: r.cols,
-            refSchema: r.ref_schema,
-            refTable: r.ref_table,
-            refColumns: r.ref_cols
-        }));
+        return refs.map(({ schema, name }) => {
+            const k = `${schema}.${name}`;
+            const cols = colsByTable.get(k) ?? [];
+            const pkSet = pksByTable.get(k) ?? new Set<string>();
+            const uqMap = uqsByTable.get(k) ?? new Map<number, string[]>();
+            const uniqueConstraints = [...uqMap.values()];
+            const uqSet = new Set(uniqueConstraints.flat());
 
-        return { schema, name, columns, foreignKeys, referencedBy, uniqueConstraints };
+            const columns: ColumnMeta[] = cols.map((r) => ({
+                name: r.column_name,
+                dataType: formatPgType(r),
+                nullable: r.is_nullable === 'YES',
+                isPrimaryKey: pkSet.has(r.column_name),
+                isUnique: uqSet.has(r.column_name),
+                default: r.column_default,
+                comment: null
+            }));
+
+            return {
+                schema,
+                name,
+                columns,
+                foreignKeys: fksByTable.get(k) ?? [],
+                referencedBy: refBysByTable.get(k) ?? [],
+                uniqueConstraints
+            };
+        });
     }
 
     async getDiagram(): Promise<DiagramPayload> {
         const refs = await this.listTables();
-        const tables = await Promise.all(refs.map((r) => this.loadTable(r.schema, r.name)));
+        const tables = await this.loadAllTables(refs);
         return { tables };
     }
 }

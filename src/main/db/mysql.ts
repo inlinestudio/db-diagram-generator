@@ -64,114 +64,107 @@ export class MysqlAdapter implements DbAdapter {
         }));
     }
 
-    private async loadTable(schema: string, name: string): Promise<TableSchema> {
-        const [colRows] = await this.c().query<RowDataPacket[]>(
-            `
-            SELECT
-                column_name,
-                column_type,
-                data_type,
-                is_nullable,
-                column_default,
-                column_key,
-                extra,
-                character_maximum_length,
-                numeric_precision,
-                numeric_scale
-            FROM information_schema.columns
-            WHERE table_schema = ?
-              AND table_name = ?
-            ORDER BY ordinal_position
-            `,
-            [schema, name]
-        );
+    private async loadAllTables(refs: TableRef[]): Promise<TableSchema[]> {
+        const [[colRows], [uniqueRows], [fkRows], [refRows]] = await Promise.all([
+            this.c().query<RowDataPacket[]>(`
+                SELECT
+                    table_schema AS ts,
+                    table_name AS tn,
+                    column_name AS col_name,
+                    column_type AS col_type,
+                    data_type,
+                    is_nullable,
+                    column_default AS col_default,
+                    column_key AS col_key,
+                    character_maximum_length AS char_max_len,
+                    numeric_precision AS num_prec,
+                    numeric_scale AS num_scale
+                FROM information_schema.columns
+                WHERE table_schema = DATABASE()
+                ORDER BY table_name, ordinal_position
+            `),
 
-        const [uniqueRows] = await this.c().query<RowDataPacket[]>(
-            `
-            SELECT
-                tc.constraint_name,
-                kcu.column_name
-            FROM information_schema.table_constraints tc
-            JOIN information_schema.key_column_usage kcu
-              ON tc.constraint_schema = kcu.constraint_schema
-             AND tc.table_schema = kcu.table_schema
-             AND tc.table_name = kcu.table_name
-             AND tc.constraint_name = kcu.constraint_name
-            WHERE tc.constraint_type = 'UNIQUE'
-              AND tc.table_schema = ?
-              AND tc.table_name = ?
-            ORDER BY tc.constraint_name, kcu.ordinal_position
-            `,
-            [schema, name]
-        );
+            this.c().query<RowDataPacket[]>(`
+                SELECT
+                    tc.table_name,
+                    tc.constraint_name,
+                    kcu.column_name
+                FROM information_schema.table_constraints tc
+                JOIN information_schema.key_column_usage kcu
+                  ON tc.constraint_schema = kcu.constraint_schema
+                 AND tc.table_schema = kcu.table_schema
+                 AND tc.table_name = kcu.table_name
+                 AND tc.constraint_name = kcu.constraint_name
+                WHERE tc.constraint_type = 'UNIQUE'
+                  AND tc.table_schema = DATABASE()
+                ORDER BY tc.table_name, tc.constraint_name, kcu.ordinal_position
+            `),
 
-        const uqMap = new Map<string, string[]>();
+            this.c().query<RowDataPacket[]>(`
+                SELECT
+                    rc.table_name,
+                    rc.constraint_name,
+                    kcu.column_name,
+                    kcu.referenced_table_schema,
+                    kcu.referenced_table_name,
+                    kcu.referenced_column_name,
+                    rc.delete_rule,
+                    rc.update_rule,
+                    kcu.ordinal_position
+                FROM information_schema.referential_constraints rc
+                JOIN information_schema.key_column_usage kcu
+                  ON rc.constraint_schema = kcu.constraint_schema
+                 AND rc.constraint_name = kcu.constraint_name
+                 AND rc.table_name = kcu.table_name
+                WHERE rc.constraint_schema = DATABASE()
+                ORDER BY rc.table_name, rc.constraint_name, kcu.ordinal_position
+            `),
 
-        for (const row of uniqueRows as any[]) {
-            if (!uqMap.has(row.constraint_name)) {
-                uqMap.set(row.constraint_name, []);
-            }
+            this.c().query<RowDataPacket[]>(`
+                SELECT
+                    kcu.referenced_table_name,
+                    rc.constraint_name,
+                    kcu.column_name,
+                    kcu.table_schema,
+                    kcu.table_name,
+                    kcu.referenced_column_name,
+                    kcu.ordinal_position
+                FROM information_schema.referential_constraints rc
+                JOIN information_schema.key_column_usage kcu
+                  ON rc.constraint_schema = kcu.constraint_schema
+                 AND rc.constraint_name = kcu.constraint_name
+                 AND rc.table_name = kcu.table_name
+                WHERE kcu.referenced_table_schema = DATABASE()
+                ORDER BY kcu.referenced_table_name, rc.constraint_name, kcu.ordinal_position
+            `)
+        ]);
 
-            uqMap.get(row.constraint_name)!.push(row.column_name);
+        // Columns per table
+        const colsByTable = new Map<string, any[]>();
+        for (const r of colRows as any[]) {
+            const tn = r.tn as string;
+            if (!colsByTable.has(tn)) colsByTable.set(tn, []);
+            colsByTable.get(tn)!.push(r);
         }
 
-        const uniqueConstraints = [...uqMap.values()];
-        const uqSet = new Set(uniqueConstraints.flat());
+        // Unique constraints per table
+        const uqsByTable = new Map<string, Map<string, string[]>>();
+        for (const row of uniqueRows as any[]) {
+            const tn = row.table_name as string;
+            if (!uqsByTable.has(tn)) uqsByTable.set(tn, new Map());
+            const m = uqsByTable.get(tn)!;
+            if (!m.has(row.constraint_name)) m.set(row.constraint_name, []);
+            m.get(row.constraint_name)!.push(row.column_name);
+        }
 
-        const columns: ColumnMeta[] = (colRows as any[]).map((r) => ({
-            name: r.COLUMN_NAME,
-            dataType: formatMysqlType({
-                column_type: r.COLUMN_TYPE,
-                data_type: r.DATA_TYPE,
-                character_maximum_length: r.CHARACTER_MAXIMUM_LENGTH,
-                numeric_precision: r.NUMERIC_PRECISION,
-                numeric_scale: r.NUMERIC_SCALE
-            }),
-            nullable: r.IS_NULLABLE === 'YES',
-            isPrimaryKey: r.COLUMN_KEY === 'PRI',
-            isUnique: r.COLUMN_KEY === 'UNI' || uqSet.has(r.COLUMN_NAME),
-            default: r.COLUMN_DEFAULT,
-            comment: null
-        }));
-
-        const [fkRows] = await this.c().query<RowDataPacket[]>(
-            `
-            SELECT
-                rc.constraint_name,
-                kcu.column_name,
-                kcu.referenced_table_schema,
-                kcu.referenced_table_name,
-                kcu.referenced_column_name,
-                rc.delete_rule,
-                rc.update_rule,
-                kcu.ordinal_position
-            FROM information_schema.referential_constraints rc
-            JOIN information_schema.key_column_usage kcu
-              ON rc.constraint_schema = kcu.constraint_schema
-             AND rc.constraint_name = kcu.constraint_name
-             AND rc.table_name = kcu.table_name
-            WHERE rc.constraint_schema = ?
-              AND rc.table_name = ?
-            ORDER BY rc.constraint_name, kcu.ordinal_position
-            `,
-            [schema, name]
-        );
-
-        const fkMap = new Map<
-            string,
-            {
-                columns: string[];
-                refSchema: string;
-                refTable: string;
-                refColumns: string[];
-                onDelete?: string;
-                onUpdate?: string;
-            }
-        >();
-
+        // Outgoing FKs per table
+        const fksByTable = new Map<string, Map<string, ForeignKey & { onDelete?: string; onUpdate?: string }>>();
         for (const row of fkRows as any[]) {
-            if (!fkMap.has(row.constraint_name)) {
-                fkMap.set(row.constraint_name, {
+            const tn = row.table_name as string;
+            if (!fksByTable.has(tn)) fksByTable.set(tn, new Map());
+            const m = fksByTable.get(tn)!;
+            if (!m.has(row.constraint_name)) {
+                m.set(row.constraint_name, {
                     columns: [],
                     refSchema: row.referenced_table_schema,
                     refTable: row.referenced_table_name,
@@ -180,81 +173,67 @@ export class MysqlAdapter implements DbAdapter {
                     onUpdate: row.update_rule
                 });
             }
-
-            const fk = fkMap.get(row.constraint_name)!;
-
+            const fk = m.get(row.constraint_name)!;
             fk.columns.push(row.column_name);
             fk.refColumns.push(row.referenced_column_name);
         }
 
-        const foreignKeys: ForeignKey[] = [...fkMap.values()];
-
-        const [refRows] = await this.c().query<RowDataPacket[]>(
-            `
-            SELECT
-                rc.constraint_name,
-                kcu.column_name,
-                kcu.table_schema,
-                kcu.table_name,
-                kcu.referenced_column_name,
-                kcu.ordinal_position
-            FROM information_schema.referential_constraints rc
-            JOIN information_schema.key_column_usage kcu
-              ON rc.constraint_schema = kcu.constraint_schema
-             AND rc.constraint_name = kcu.constraint_name
-             AND rc.table_name = kcu.table_name
-            WHERE kcu.referenced_table_schema = ?
-              AND kcu.referenced_table_name = ?
-            ORDER BY rc.constraint_name, kcu.ordinal_position
-            `,
-            [schema, name]
-        );
-
-        const refMap = new Map<
-            string,
-            {
-                columns: string[];
-                refSchema: string;
-                refTable: string;
-                refColumns: string[];
-            }
-        >();
-
+        // Incoming FKs per referenced table
+        const refsByTable = new Map<string, Map<string, ForeignKey>>();
         for (const row of refRows as any[]) {
-            if (!refMap.has(row.constraint_name)) {
-                refMap.set(row.constraint_name, {
+            const tn = row.referenced_table_name as string;
+            if (!refsByTable.has(tn)) refsByTable.set(tn, new Map());
+            const m = refsByTable.get(tn)!;
+            if (!m.has(row.constraint_name)) {
+                m.set(row.constraint_name, {
                     columns: [],
                     refSchema: row.table_schema,
                     refTable: row.table_name,
                     refColumns: []
                 });
             }
-
-            const ref = refMap.get(row.constraint_name)!;
-
+            const ref = m.get(row.constraint_name)!;
             ref.columns.push(row.column_name);
             ref.refColumns.push(row.referenced_column_name);
         }
 
-        const referencedBy: ForeignKey[] = [...refMap.values()];
+        return refs.map(({ schema, name }) => {
+            const uqMap = uqsByTable.get(name) ?? new Map<string, string[]>();
+            const uniqueConstraints = [...uqMap.values()];
+            const uqSet = new Set(uniqueConstraints.flat());
 
-        return {
-            schema,
-            name,
-            columns,
-            foreignKeys,
-            referencedBy,
-            uniqueConstraints
-        };
+            const tableCols = colsByTable.get(name) ?? [];
+
+            const columns: ColumnMeta[] = tableCols.map((r) => ({
+                name: r.col_name,
+                dataType: formatMysqlType({
+                    column_type: r.col_type,
+                    data_type: r.data_type,
+                    character_maximum_length: r.char_max_len,
+                    numeric_precision: r.num_prec,
+                    numeric_scale: r.num_scale
+                }),
+                nullable: r.is_nullable === 'YES',
+                isPrimaryKey: r.col_key === 'PRI',
+                isUnique: r.col_key === 'UNI' || uqSet.has(r.col_name),
+                default: r.col_default,
+                comment: null
+            }));
+
+            return {
+                schema,
+                name,
+                columns,
+                foreignKeys: [...(fksByTable.get(name)?.values() ?? [])],
+                referencedBy: [...(refsByTable.get(name)?.values() ?? [])],
+                uniqueConstraints
+            };
+        });
     }
 
     async getDiagram(): Promise<DiagramPayload> {
         const refs = await this.listTables();
-
-        const tables = await Promise.all(
-            refs.map((r) => this.loadTable(r.schema, r.name))
-        );
-
+        const tables = await this.loadAllTables(refs);
         return { tables };
     }
 }

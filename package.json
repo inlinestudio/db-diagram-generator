@@ -67,7 +67,7 @@
       "package.json"
     ],
     "mac": {
-      "artifactName": "${productName}-${version}-${arch}-mac.${ext}",
+      "artifactName": "DB-Diagram-Generator-${version}-${arch}-mac.${ext}",
       "category": "public.app-category.developer-tools",
       "icon": "build/icon.png",
       "hardenedRuntime": true,
@@ -81,7 +81,7 @@
       ]
     },
     "win": {
-      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "artifactName": "DB-Diagram-Generator-${version}-${arch}.${ext}",
       "icon": "build/icon.ico",
       "target": [
         "nsis",
@@ -89,7 +89,7 @@
       ]
     },
     "linux": {
-      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "artifactName": "DB-Diagram-Generator-${version}-${arch}.${ext}",
       "icon": "build/icon.png",
       "target": [
         "AppImage",
