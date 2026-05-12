@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.4.1](https://github.com/inlinestudio/db-diagram-generator/compare/v1.4.0...v1.4.1) (2026-05-12)
+
+
+### Bug Fixes
+
+* optimize table data collection ([1e723c2](https://github.com/inlinestudio/db-diagram-generator/commit/1e723c2321f6ddbcbed8b60e61cfa42d4ba9a7db))
+* rendering and collision ([515476f](https://github.com/inlinestudio/db-diagram-generator/commit/515476f5cff85135d4fd3813adcdd093714408d3))
+
 ## [1.4.0](https://github.com/inlinestudio/db-diagram-generator/compare/v1.3.1...v1.4.0) (2026-05-11)
 
 
