@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.5.0](https://github.com/inlinestudio/db-diagram-generator/compare/v1.4.1...v1.5.0) (2026-05-12)
+
+
+### Features
+
+* add mssql adapter ([cbbba86](https://github.com/inlinestudio/db-diagram-generator/commit/cbbba86b61236b2ffae82a8bee1166047aa69504))
+
+
+### Bug Fixes
+
+* edge highlight on selection, removed arrow edge ([7e865f9](https://github.com/inlinestudio/db-diagram-generator/commit/7e865f9f6932f8048ee70d6a8cfec7dfc6f81d36))
+
 ## [1.4.1](https://github.com/inlinestudio/db-diagram-generator/compare/v1.4.0...v1.4.1) (2026-05-12)
 
 
