@@ -9,6 +9,7 @@ import {
     useNodesState,
     useEdgesState,
     useReactFlow,
+    getNodesBounds,
 } from '@xyflow/react';
 import type { Edge, NodeChange, NodePositionChange } from '@xyflow/react';
 import { toPng } from 'html-to-image';
@@ -34,10 +35,14 @@ export default function Diagram(props: Props) {
 
 function DiagramInner({ payload }: Props) {
     const flowRef = useRef<HTMLDivElement>(null);
-    const { fitView } = useReactFlow();
+    const exportDetailsRef = useRef<HTMLDetailsElement>(null);
+    const { fitView, getNodes, getViewport, setViewport } = useReactFlow();
     const [snap, setSnap] = useState(true);
+    const [showHelp, setShowHelp] = useState(false);
     const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
     const [filterSearch, setFilterSearch] = useState('');
+
+    const isMac = navigator.platform.toUpperCase().includes('MAC');
 
     const filteredPayload = useMemo<DiagramPayload>(() => {
         if (selectedKeys.size === 0) return payload;
@@ -109,33 +114,67 @@ function DiagramInner({ payload }: Props) {
         setEdges(eds => routeEdgesInGraph(resolved, eds));
     }, [nodes, setNodes, setEdges]);
 
-    const exportPng = useCallback(async () => {
+    const exportPng = useCallback(async (mode: 'viewport' | 'full') => {
         if (!flowRef.current) return;
         const container = flowRef.current.querySelector('.react-flow') as HTMLElement | null;
         if (!container) return;
 
-        fitView({ padding: 0.1, duration: 0 });
-        await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+        const filter = (n: Node) => {
+            if (!(n instanceof HTMLElement)) return true;
+            const cls = n.classList;
+            return (
+                !cls.contains('react-flow__minimap') &&
+                !cls.contains('react-flow__controls') &&
+                !cls.contains('react-flow__panel') &&
+                !cls.contains('react-flow__attribution')
+            );
+        };
 
-        const dataUrl = await toPng(container, {
-            backgroundColor: '#ffffff',
-            pixelRatio: 2,
-            filter: (n) => {
-                if (!(n instanceof HTMLElement)) return true;
-                const cls = n.classList;
-                return (
-                    !cls.contains('react-flow__minimap') &&
-                    !cls.contains('react-flow__controls') &&
-                    !cls.contains('react-flow__panel') &&
-                    !cls.contains('react-flow__attribution')
-                );
-            }
-        });
+        let dataUrl: string;
+
+        if (mode === 'viewport') {
+            fitView({ padding: 0.1, duration: 0 });
+            await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+            dataUrl = await toPng(container, { backgroundColor: '#ffffff', pixelRatio: 2, filter });
+        } else {
+            const allNodes = getNodes();
+            if (allNodes.length === 0) return;
+            const bounds = getNodesBounds(allNodes);
+            const padding = 40;
+            const imgWidth = Math.ceil(bounds.width + padding * 2);
+            const imgHeight = Math.ceil(bounds.height + padding * 2);
+
+            const savedViewport = getViewport();
+            const savedWidth = container.style.width;
+            const savedHeight = container.style.height;
+            const savedOverflow = container.style.overflow;
+
+            container.style.width = `${imgWidth}px`;
+            container.style.height = `${imgHeight}px`;
+            container.style.overflow = 'visible';
+            setViewport({ x: -bounds.x + padding, y: -bounds.y + padding, zoom: 1 }, { duration: 0 });
+
+            await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+
+            dataUrl = await toPng(container, {
+                backgroundColor: '#ffffff',
+                pixelRatio: 2,
+                width: imgWidth,
+                height: imgHeight,
+                filter,
+            });
+
+            container.style.width = savedWidth;
+            container.style.height = savedHeight;
+            container.style.overflow = savedOverflow;
+            setViewport(savedViewport, { duration: 0 });
+        }
+
         const link = document.createElement('a');
         link.download = 'schema.png';
         link.href = dataUrl;
         link.click();
-    }, [fitView]);
+    }, [fitView, getNodes, getViewport, setViewport]);
 
     const allTables = payload.tables;
     const filterMatches = useMemo(() => {
@@ -212,7 +251,13 @@ function DiagramInner({ payload }: Props) {
                         {filteredPayload.tables.length} of {allTables.length} table
                         {allTables.length === 1 ? '' : 's'}
                     </span>
-                    <button onClick={exportPng}>Export PNG</button>
+                    <details className="export-dropdown" ref={exportDetailsRef}>
+                        <summary>Export PNG</summary>
+                        <div className="export-menu">
+                            <button onClick={() => { void exportPng('viewport'); exportDetailsRef.current?.removeAttribute('open'); }}>Viewport</button>
+                            <button onClick={() => { void exportPng('full'); exportDetailsRef.current?.removeAttribute('open'); }}>Full diagram</button>
+                        </div>
+                    </details>
                 </div>
                 <div ref={flowRef} className="diagram">
                     <ReactFlow
@@ -241,7 +286,28 @@ function DiagramInner({ payload }: Props) {
                                     <path d="M2 6h12M2 10h12M6 2v12M10 2v12" />
                                 </svg>
                             </ControlButton>
+                            <ControlButton
+                                onClick={() => setShowHelp((s) => !s)}
+                                title="Keyboard shortcuts"
+                                className={showHelp ? 'snap-on' : ''}
+                            >
+                                ?
+                            </ControlButton>
                         </Controls>
+                        {showHelp && (
+                            <div className="hotkeys-panel">
+                                <div className="hotkeys-title">Shortcuts</div>
+                                <table className="hotkeys-table">
+                                    <tbody>
+                                        <tr><td><kbd>{isMac ? '⌘' : 'Ctrl'}</kbd> + click</td><td>Multi-select edges / nodes</td></tr>
+                                        <tr><td><kbd>Shift</kbd> + drag</td><td>Selection box</td></tr>
+                                        <tr><td>Scroll</td><td>Zoom</td></tr>
+                                        <tr><td>Drag canvas</td><td>Pan</td></tr>
+                                        <tr><td><kbd>Esc</kbd></td><td>Deselect all</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
                         <MiniMap pannable zoomable nodeColor="#4a6fa5" nodeStrokeWidth={0} maskColor="rgba(100,120,160,0.35)" style={{ border: '1px solid #000', borderRadius: 8, backgroundColor: '#e8ecf2' }} />
                     </ReactFlow>
                 </div>
