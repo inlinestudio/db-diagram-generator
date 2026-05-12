@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.1](https://github.com/inlinestudio/db-diagram-generator/compare/v1.5.0...v1.5.1) (2026-05-12)
+
+
+### Bug Fixes
+
+* make minimap usable by changing colors ([d27c3fe](https://github.com/inlinestudio/db-diagram-generator/commit/d27c3fe5f9c04653d798cd14232d1ffc03cda331))
+
 ## [1.5.0](https://github.com/inlinestudio/db-diagram-generator/compare/v1.4.1...v1.5.0) (2026-05-12)
 
 
