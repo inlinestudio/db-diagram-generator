@@ -249,18 +249,15 @@ export function routeEdgesInGraph(nodes: TableNodeType[], edges: Edge[]): Edge[]
                 const by2 = b.y + b.h;
                 if (vx > b.x - ROUTE_MARGIN && vx < bx2 + ROUTE_MARGIN &&
                     maxY > b.y && minY < by2) {
-                    console.debug(`[route] edge=${edge.id} vx=${vx.toFixed(0)} blocked by vx-in-node id=${id} box=[${b.x.toFixed(0)},${b.y.toFixed(0)},${bx2.toFixed(0)},${by2.toFixed(0)}]`);
                     return false;
                 }
                 if (id === edge.source || id === edge.target) continue;
                 if (srcY > b.y - ROUTE_MARGIN && srcY < by2 + ROUTE_MARGIN &&
                     h1xMax > b.x && h1xMin < bx2) {
-                    console.debug(`[route] edge=${edge.id} vx=${vx.toFixed(0)} blocked by H1 id=${id} srcY=${srcY.toFixed(0)} box=[${b.x.toFixed(0)},${b.y.toFixed(0)},${bx2.toFixed(0)},${by2.toFixed(0)}]`);
                     return false;
                 }
                 if (tgtY > b.y - ROUTE_MARGIN && tgtY < by2 + ROUTE_MARGIN &&
                     h2xMax > b.x && h2xMin < bx2) {
-                    console.debug(`[route] edge=${edge.id} vx=${vx.toFixed(0)} blocked by H2 id=${id} tgtY=${tgtY.toFixed(0)} box=[${b.x.toFixed(0)},${b.y.toFixed(0)},${bx2.toFixed(0)},${by2.toFixed(0)}]`);
                     return false;
                 }
             }
@@ -269,7 +266,6 @@ export function routeEdgesInGraph(nodes: TableNodeType[], edges: Edge[]): Edge[]
 
         // Keep existing 3-seg vx if still clear (skip if currently in detour mode)
         if (existingVy === undefined && existingVx !== undefined && isClear(existingVx)) {
-            console.debug(`[route] edge=${edge.id} kept existingVx=${existingVx.toFixed(0)}`);
             return edge;
         }
 
@@ -277,15 +273,9 @@ export function routeEdgesInGraph(nodes: TableNodeType[], edges: Edge[]): Edge[]
         const right = Math.max(srcEdgeX, tgtEdgeX);
         const defaultVx = (srcEdgeX + tgtEdgeX) / 2;
 
-        console.debug(`[route] edge=${edge.id} src=${edge.source} tgt=${edge.target} srcEdgeX=${srcEdgeX.toFixed(0)} tgtEdgeX=${tgtEdgeX.toFixed(0)} srcY=${srcY.toFixed(0)} tgtY=${tgtY.toFixed(0)} existingVx=${existingVx ?? 'none'} defaultVx=${defaultVx.toFixed(0)}`);
-
         // Remove stale routing when default corridor is now clear
         if (isClear(defaultVx)) {
-            if (existingVx === undefined && existingVy === undefined) {
-                console.debug(`[route] edge=${edge.id} default corridor clear, no vx needed`);
-                return edge;
-            }
-            console.debug(`[route] edge=${edge.id} default clear — removing routing`);
+            if (existingVx === undefined && existingVy === undefined) return edge;
             const { vx: _v, vxManual: _m, vy: _vy, vx2: _vx2, ...rest } = edgeData;
             return { ...edge, data: rest };
         }
@@ -295,15 +285,15 @@ export function routeEdgesInGraph(nodes: TableNodeType[], edges: Edge[]): Edge[]
         const STEP = 10;
         for (let d = STEP; d <= (right - left) / 2; d += STEP) {
             const newVx = defaultVx + d;
-            if (isClear(newVx)) { console.debug(`[route] edge=${edge.id} rerouted vx=${newVx.toFixed(0)} (+${d})`); return { ...edge, ...handlesForVx(newVx), data: { ...baseData, vx: newVx } }; }
+            if (isClear(newVx)) return { ...edge, ...handlesForVx(newVx), data: { ...baseData, vx: newVx } };
             const newVxN = defaultVx - d;
-            if (isClear(newVxN)) { console.debug(`[route] edge=${edge.id} rerouted vx=${newVxN.toFixed(0)} (-${d})`); return { ...edge, ...handlesForVx(newVxN), data: { ...baseData, vx: newVxN } }; }
+            if (isClear(newVxN)) return { ...edge, ...handlesForVx(newVxN), data: { ...baseData, vx: newVxN } };
         }
         for (let offset = STEP; offset <= 400; offset += STEP) {
             const newVxL = left - offset;
-            if (isClear(newVxL)) { console.debug(`[route] edge=${edge.id} rerouted vx=${newVxL.toFixed(0)} (left-${offset})`); return { ...edge, ...handlesForVx(newVxL), data: { ...baseData, vx: newVxL } }; }
+            if (isClear(newVxL)) return { ...edge, ...handlesForVx(newVxL), data: { ...baseData, vx: newVxL } };
             const newVxR = right + offset;
-            if (isClear(newVxR)) { console.debug(`[route] edge=${edge.id} rerouted vx=${newVxR.toFixed(0)} (right+${offset})`); return { ...edge, ...handlesForVx(newVxR), data: { ...baseData, vx: newVxR } }; }
+            if (isClear(newVxR)) return { ...edge, ...handlesForVx(newVxR), data: { ...baseData, vx: newVxR } };
         }
 
         // 3-seg exhausted — try 5-segment U-detour around the trapping obstacle
@@ -316,14 +306,12 @@ export function routeEdgesInGraph(nodes: TableNodeType[], edges: Edge[]): Edge[]
                 const detourVx1 = b.x - ROUTE_MARGIN - 5;
                 const detourVx2 = bx2 + ROUTE_MARGIN + 5;
                 const vy = srcY - b.y < by2 - srcY
-                    ? b.y - ROUTE_MARGIN - 20   // go above
-                    : by2 + ROUTE_MARGIN + 20;  // go below
-                console.debug(`[route] edge=${edge.id} 5-seg detour vx1=${detourVx1.toFixed(0)} vy=${vy.toFixed(0)} vx2=${detourVx2.toFixed(0)} around id=${id}`);
+                    ? b.y - ROUTE_MARGIN - 20
+                    : by2 + ROUTE_MARGIN + 20;
                 return { ...edge, ...handlesForVx(detourVx1, detourVx2), data: { ...baseData, vx: detourVx1, vy, vx2: detourVx2 } };
             }
         }
 
-        console.warn(`[route] edge=${edge.id} no path found — clearing routing`);
         const { vx: _v2, vxManual: _m2, vy: _vy2, vx2: _vx22, ...rest } = edgeData;
         return { ...edge, data: rest };
     });

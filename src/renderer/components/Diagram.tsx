@@ -102,13 +102,9 @@ function DiagramInner({ payload }: Props) {
     }, [onNodesChange, nodes, setEdges]);
 
     const onNodeDragStop = useCallback((_: React.MouseEvent, _node: TableNodeType, draggedNodes: TableNodeType[]) => {
-        console.debug(`[drag-stop] dragged=${draggedNodes.map(n => n.id).join(',')}`);
         const dragMap = new Map(draggedNodes.map(n => [n.id, n]));
         const merged = nodes.map(n => dragMap.has(n.id) ? { ...n, position: dragMap.get(n.id)!.position } : n);
         const resolved = resolveCollisions(merged);
-        const movedIds = resolved.filter((n, i) => n.position.x !== merged[i].position.x || n.position.y !== merged[i].position.y).map(n => n.id);
-        if (movedIds.length) console.debug(`[drag-stop] collision-resolved nodes: ${movedIds.join(',')}`);
-        console.debug(`[drag-stop] calling routeEdgesInGraph`);
         setNodes(resolved);
         setEdges(eds => routeEdgesInGraph(resolved, eds));
     }, [nodes, setNodes, setEdges]);
@@ -246,7 +242,7 @@ function DiagramInner({ payload }: Props) {
                                 </svg>
                             </ControlButton>
                         </Controls>
-                        <MiniMap pannable zoomable />
+                        <MiniMap pannable zoomable nodeColor="#4a6fa5" nodeStrokeWidth={0} maskColor="rgba(100,120,160,0.35)" style={{ border: '1px solid #000', borderRadius: 8, backgroundColor: '#e8ecf2' }} />
                     </ReactFlow>
                 </div>
             </div>
