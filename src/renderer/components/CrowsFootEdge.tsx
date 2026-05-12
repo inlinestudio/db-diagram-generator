@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useCallback } from 'react';
-import { EdgeLabelRenderer, useReactFlow, Position, type EdgeProps } from '@xyflow/react';
+import { EdgeLabelRenderer, useReactFlow, useStore, Position, type EdgeProps } from '@xyflow/react';
 import { routeEdgesInGraph, parseCrossingPts, buildEdgePathD, findVxHandle } from './edgeRouting';
 import type { TableNodeType } from './TableNode';
 
@@ -117,7 +117,10 @@ export default function CrowsFootEdge({
     label,
     data,
 }: EdgeProps) {
-    const stroke = selected ? 'var(--accent)' : 'var(--muted)';
+    const storeSelected = useStore(s => s.edgeLookup.get(id)?.selected ?? false);
+    const isSelected = selected || storeSelected;
+    const stroke = isSelected ? 'var(--accent)' : 'var(--muted)';
+    const strokeWidth = isSelected ? 2.5 : 1.5;
     const allCrossings = useContext(CrossingsCtx);
     const [hovered, setHovered] = useState(false);
     const { onPointerDown: onHandlePointerDown, onPointerMove: onHandlePointerMove, onDblClick: onHandleDblClick } = useEdgeVxDrag(id);
@@ -169,12 +172,11 @@ export default function CrowsFootEdge({
                 className="react-flow__edge-path"
                 d={edgePath}
                 fill="none"
-                stroke={stroke}
-                strokeWidth={1.5}
+                style={{ stroke, strokeWidth }}
             />
-            <path d={edgePath} fill="none" stroke="transparent" strokeWidth={20} />
-            <path d={crowsPath} fill="none" stroke={stroke} strokeWidth={1.5} strokeLinecap="round" />
-            <path d={onePath} fill="none" stroke={stroke} strokeWidth={1.5} strokeLinecap="round" />
+            <path d={edgePath} className="react-flow__edge-interaction" fill="none" stroke="transparent" strokeOpacity={0} strokeWidth={20} />
+            <path d={crowsPath} fill="none" stroke={stroke} strokeWidth={strokeWidth} strokeLinecap="round" />
+            <path d={onePath} fill="none" stroke={stroke} strokeWidth={strokeWidth} strokeLinecap="round" />
             {(hovered || selected) && handleX !== undefined && handleMidY !== undefined && (
                 <circle
                     cx={handleX}

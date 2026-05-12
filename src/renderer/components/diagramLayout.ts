@@ -1,5 +1,4 @@
 import dagre from 'dagre';
-import { MarkerType } from '@xyflow/react';
 import type { Edge } from '@xyflow/react';
 import type { DiagramPayload, TableSchema } from '@shared/schema';
 import type { TableNodeType } from './TableNode';
@@ -71,7 +70,7 @@ export function tableKey(t: { schema: string | null; name: string }): string {
     return `${t.schema ?? ''}.${t.name}`;
 }
 
-export function buildGraph(payload: DiagramPayload, crowsFoot: boolean): { initialNodes: TableNodeType[]; initialEdges: Edge[] } {
+export function buildGraph(payload: DiagramPayload): { initialNodes: TableNodeType[]; initialEdges: Edge[] } {
     const seen = new Map<string, TableSchema>();
     for (const t of payload.tables) {
         const key = tableKey(t);
@@ -79,7 +78,7 @@ export function buildGraph(payload: DiagramPayload, crowsFoot: boolean): { initi
     }
 
     const g = new dagre.graphlib.Graph();
-    g.setGraph({ rankdir: 'LR', nodesep: 60, ranksep: 120 });
+    g.setGraph({ rankdir: 'LR', nodesep: 80, ranksep: 220 });
     g.setDefaultEdgeLabel(() => ({}));
 
     const uqDataMap = new Map<string, { labels: Map<string, string>; groups: Map<string, string[]> }>();
@@ -111,8 +110,8 @@ export function buildGraph(payload: DiagramPayload, crowsFoot: boolean): { initi
                 target,
                 sourceHandle: `${fk.columns[0]}-sr`,
                 targetHandle: `${fk.refColumns[0]}-tl`,
-                type: crowsFoot ? 'crowsfoot' : 'arrow',
-                markerEnd: crowsFoot ? undefined : { type: MarkerType.ArrowClosed },
+                type: 'crowsfoot',
+                markerEnd: undefined,
                 label: fk.columns.length > 1 ? `(${fk.columns.join(', ')})` : undefined
             });
             if (!connectedFkColumnsMap.has(key)) connectedFkColumnsMap.set(key, new Set());

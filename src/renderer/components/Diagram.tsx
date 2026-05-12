@@ -15,13 +15,12 @@ import { toPng } from 'html-to-image';
 import type { DiagramPayload } from '@shared/schema';
 import TableNode, { type TableNodeType } from './TableNode';
 import CrowsFootEdge, { CrossingsCtx } from './CrowsFootEdge';
-import ArrowEdge from './ArrowEdge';
 import { buildGraph, tableKey } from './diagramLayout';
 import { computeCrossings, resolveCollisions, routeEdgesInGraph } from './edgeRouting';
 import type { CrossPoint } from './edgeRouting';
 
 const nodeTypes = { table: TableNode };
-const edgeTypes = { crowsfoot: CrowsFootEdge, arrow: ArrowEdge };
+const edgeTypes = { crowsfoot: CrowsFootEdge };
 
 type Props = { payload: DiagramPayload };
 
@@ -37,7 +36,6 @@ function DiagramInner({ payload }: Props) {
     const flowRef = useRef<HTMLDivElement>(null);
     const { fitView } = useReactFlow();
     const [snap, setSnap] = useState(true);
-    const [crowsFoot, setCrowsFoot] = useState(false);
     const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
     const [filterSearch, setFilterSearch] = useState('');
 
@@ -48,15 +46,15 @@ function DiagramInner({ payload }: Props) {
     }, [payload, selectedKeys]);
 
     const { initialNodes, initialEdges } = useMemo(
-        () => buildGraph(filteredPayload, crowsFoot),
-        [filteredPayload, crowsFoot]
+        () => buildGraph(filteredPayload),
+        [filteredPayload]
     );
     const [nodes, setNodes, onNodesChange] = useNodesState<TableNodeType>(initialNodes);
     const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(initialEdges);
 
     const crossings = useMemo(
-        () => crowsFoot ? computeCrossings(nodes, edges) : new Map<string, CrossPoint[]>(),
-        [nodes, edges, crowsFoot],
+        () => computeCrossings(nodes, edges),
+        [nodes, edges],
     );
 
     useEffect(() => {
@@ -232,6 +230,8 @@ function DiagramInner({ payload }: Props) {
                         fitView
                         snapToGrid={snap}
                         snapGrid={[20, 20]}
+                        elevateEdgesOnSelect
+                        onEdgeClick={(e) => e.stopPropagation()}
                         proOptions={{ hideAttribution: true }}
                     >
                         <Background />
@@ -243,15 +243,6 @@ function DiagramInner({ payload }: Props) {
                             >
                                 <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.5">
                                     <path d="M2 6h12M2 10h12M6 2v12M10 2v12" />
-                                </svg>
-                            </ControlButton>
-                            <ControlButton
-                                onClick={() => setCrowsFoot((s) => !s)}
-                                title={crowsFoot ? "Crow's foot: on" : "Crow's foot: off"}
-                                className={crowsFoot ? 'crowsfoot-on' : ''}
-                            >
-                                <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-                                    <path d="M8 8 L2 4M8 8 L2 8M8 8 L2 12M10 3 L10 13" />
                                 </svg>
                             </ControlButton>
                         </Controls>
