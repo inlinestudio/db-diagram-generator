@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.1](https://github.com/inlinestudio/db-diagram-generator/compare/v1.6.0...v1.6.1) (2026-05-14)
+
+
+### Bug Fixes
+
+* move index columns below index name ([c9e0712](https://github.com/inlinestudio/db-diagram-generator/commit/c9e07128def80f9bc2a1589618d8b11f1df17674))
+
 ## [1.6.0](https://github.com/inlinestudio/db-diagram-generator/compare/v1.5.1...v1.6.0) (2026-05-14)
 
 
