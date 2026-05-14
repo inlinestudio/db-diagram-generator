@@ -245,18 +245,17 @@ input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1
   padding: 4px 12px 2px; border-top: 1px solid var(--border);
 }
 .node-index-row {
-  display: flex; justify-content: space-between; gap: 8px; padding: 2px 12px;
-  min-height: 20px; align-items: center;
+  display: flex; flex-direction: column; gap: 1px; padding: 2px 12px;
+  min-height: 20px;
 }
 .node-index-row:last-child { padding-bottom: 4px; }
 .node-index-name {
   display: inline-flex; align-items: center; gap: 4px;
-  color: var(--text); font-size: 11px; white-space: nowrap; flex-shrink: 0;
+  color: var(--text); font-size: 11px;
 }
 .node-index-cols {
   color: var(--muted); font-size: 11px;
   font-family: ui-monospace, SFMono-Regular, monospace;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
 .col-handle {

@@ -69,7 +69,9 @@ export function computeNodeWidth(table: TableSchema, fkColumns: Set<string>, uqL
     for (const idx of (table.indexes ?? [])) {
         const typeBadgeW = idx.type ? (10 + measureWidth(idx.type, BADGE_FONT)) + BADGE_GAP : 0;
         const colsText = `[${idx.columns.join(', ')}]`;
-        const rowW = HORIZ_PADDING + typeBadgeW + measureWidth(idx.name, NAME_FONT) + NAME_TYPE_GAP + measureWidth(colsText, TYPE_FONT);
+        const nameRowW = HORIZ_PADDING + typeBadgeW + measureWidth(idx.name, NAME_FONT);
+        const colsRowW = HORIZ_PADDING + measureWidth(colsText, TYPE_FONT);
+        const rowW = Math.max(nameRowW, colsRowW);
         if (rowW > widest) widest = rowW;
     }
     return Math.min(MAX_NODE_WIDTH, Math.max(MIN_NODE_WIDTH, Math.ceil(widest)));
