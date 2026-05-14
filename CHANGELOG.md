@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.6.0](https://github.com/inlinestudio/db-diagram-generator/compare/v1.5.1...v1.6.0) (2026-05-14)
+
+
+### Features
+
+* show table indexes && fix: table node autowidth ([82ffecd](https://github.com/inlinestudio/db-diagram-generator/commit/82ffecd329f0ae63430d63ce011e298007781f3d))
+
+
+### Bug Fixes
+
+* minimap colors ([376d98d](https://github.com/inlinestudio/db-diagram-generator/commit/376d98d89abdc80bfc5b8a48cedef0753ae6fded))
+
 ## [1.5.1](https://github.com/inlinestudio/db-diagram-generator/compare/v1.5.0...v1.5.1) (2026-05-12)
 
 
