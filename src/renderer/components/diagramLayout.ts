@@ -1,6 +1,6 @@
 import dagre from 'dagre';
 import type { Edge } from '@xyflow/react';
-import type { DiagramPayload, TableSchema } from '@shared/schema';
+import type { DiagramPayload, TableSchema, IndexMeta } from '@shared/schema';
 import type { TableNodeType } from './TableNode';
 import { routeEdgesInGraph } from './edgeRouting';
 
@@ -16,6 +16,9 @@ export const NAME_TYPE_GAP = 12;
 export const HEADER_FONT = "600 13px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
 export const NAME_FONT = "12px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
 export const TYPE_FONT = "11px ui-monospace, SFMono-Regular, monospace";
+export const BADGE_FONT = "700 9px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+export const INDEX_HEADER_HEIGHT = 22;
+export const INDEX_ROW_HEIGHT = 20;
 
 let measureCtx: CanvasRenderingContext2D | null = null;
 export function measureWidth(text: string, font: string): number {
@@ -63,6 +66,12 @@ export function computeNodeWidth(table: TableSchema, fkColumns: Set<string>, uqL
         const rowW = HORIZ_PADDING + badgesW + nameW + NAME_TYPE_GAP + typeW;
         if (rowW > widest) widest = rowW;
     }
+    for (const idx of (table.indexes ?? [])) {
+        const typeBadgeW = idx.type ? (10 + measureWidth(idx.type, BADGE_FONT)) + BADGE_GAP : 0;
+        const colsText = `[${idx.columns.join(', ')}]`;
+        const rowW = HORIZ_PADDING + typeBadgeW + measureWidth(idx.name, NAME_FONT) + NAME_TYPE_GAP + measureWidth(colsText, TYPE_FONT);
+        if (rowW > widest) widest = rowW;
+    }
     return Math.min(MAX_NODE_WIDTH, Math.max(MIN_NODE_WIDTH, Math.ceil(widest)));
 }
 
@@ -92,7 +101,9 @@ export function buildGraph(payload: DiagramPayload): { initialNodes: TableNodeTy
         for (const fk of t.foreignKeys) for (const c of fk.columns) fkCols.add(c);
         const w = computeNodeWidth(t, fkCols, uqDataMap.get(key)!.labels);
         widths.set(key, w);
-        g.setNode(key, { width: w, height: HEADER_HEIGHT + t.columns.length * ROW_HEIGHT });
+        const idxCount = (t.indexes ?? []).length;
+        const idxH = idxCount > 0 ? INDEX_HEADER_HEIGHT + idxCount * INDEX_ROW_HEIGHT : 0;
+        g.setNode(key, { width: w, height: HEADER_HEIGHT + t.columns.length * ROW_HEIGHT + idxH });
     }
 
     const referencedColumnsMap = new Map<string, Set<string>>();
@@ -128,12 +139,14 @@ export function buildGraph(payload: DiagramPayload): { initialNodes: TableNodeTy
         const fkColumns = new Set<string>();
         for (const fk of t.foreignKeys) for (const c of fk.columns) fkColumns.add(c);
         const width = widths.get(key) ?? MIN_NODE_WIDTH;
+        const indexes = t.indexes ?? [];
+        const idxH = indexes.length > 0 ? INDEX_HEADER_HEIGHT + indexes.length * INDEX_ROW_HEIGHT : 0;
         return {
             id: key,
             type: 'table',
             position: {
                 x: pos.x - width / 2,
-                y: pos.y - (HEADER_HEIGHT + t.columns.length * ROW_HEIGHT) / 2
+                y: pos.y - (HEADER_HEIGHT + t.columns.length * ROW_HEIGHT + idxH) / 2
             },
             data: {
                 schema: t.schema,
@@ -146,6 +159,7 @@ export function buildGraph(payload: DiagramPayload): { initialNodes: TableNodeTy
                 width,
                 uqLabels: uqDataMap.get(key)!.labels,
                 uqGroups: uqDataMap.get(key)!.groups,
+                indexes,
             }
         };
     });

@@ -31,6 +31,12 @@ export type ColumnMeta = {
     comment: string | null;
 };
 
+export type IndexMeta = {
+    name: string;
+    columns: string[];
+    type?: string;
+};
+
 export type ForeignKey = {
     columns: string[];
     refSchema: string | null;
@@ -50,6 +56,7 @@ export type TableSchema = TableRef & {
     foreignKeys: ForeignKey[];
     referencedBy: ForeignKey[];
     uniqueConstraints: string[][];
+    indexes: IndexMeta[];
 };
 
 export type DiagramPayload = {

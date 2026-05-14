@@ -1,6 +1,6 @@
 import { Handle, Position } from '@xyflow/react';
 import type { NodeProps, Node } from '@xyflow/react';
-import type { ColumnMeta } from '@shared/schema';
+import type { ColumnMeta, IndexMeta } from '@shared/schema';
 
 export type TableNodeData = {
     schema: string | null;
@@ -13,6 +13,7 @@ export type TableNodeData = {
     width: number;
     uqLabels: Map<string, string>;
     uqGroups: Map<string, string[]>;
+    indexes: IndexMeta[];
 };
 
 export type TableNodeType = Node<TableNodeData, 'table'>;
@@ -70,6 +71,20 @@ export default function TableNode({ data }: NodeProps<TableNodeType>) {
                     </li>
                 ))}
             </ul>
+            {data.indexes.length > 0 && (
+                <>
+                    <div className="node-index-header">Indexes</div>
+                    {data.indexes.map((idx) => (
+                        <div key={idx.name} className="node-index-row">
+                            <span className="node-index-name">
+                                {idx.type && <span className="badge idx-type">{idx.type}</span>}
+                                {idx.name}
+                            </span>
+                            <span className="node-index-cols">[{idx.columns.join(', ')}]</span>
+                        </div>
+                    ))}
+                </>
+            )}
         </div>
     );
 }

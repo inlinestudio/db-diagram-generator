@@ -4,7 +4,8 @@ import type {
     DiagramPayload,
     TableSchema,
     ColumnMeta,
-    ForeignKey
+    ForeignKey,
+    IndexMeta
 } from '@shared/schema';
 import type { DbAdapter } from './types';
 
@@ -65,7 +66,7 @@ export class MysqlAdapter implements DbAdapter {
     }
 
     private async loadAllTables(refs: TableRef[]): Promise<TableSchema[]> {
-        const [[colRows], [uniqueRows], [fkRows], [refRows]] = await Promise.all([
+        const [[colRows], [uniqueRows], [fkRows], [refRows], [idxRows]] = await Promise.all([
             this.c().query<RowDataPacket[]>(`
                 SELECT
                     table_schema AS ts,
@@ -136,6 +137,18 @@ export class MysqlAdapter implements DbAdapter {
                  AND rc.table_name = kcu.table_name
                 WHERE kcu.referenced_table_schema = DATABASE()
                 ORDER BY kcu.referenced_table_name, rc.constraint_name, kcu.ordinal_position
+            `),
+
+            this.c().query<RowDataPacket[]>(`
+                SELECT TABLE_NAME  AS table_name,
+                       INDEX_NAME  AS index_name,
+                       COLUMN_NAME AS column_name,
+                       INDEX_TYPE  AS index_type,
+                       SEQ_IN_INDEX AS seq
+                FROM information_schema.STATISTICS
+                WHERE TABLE_SCHEMA = DATABASE()
+                  AND NON_UNIQUE = 1
+                ORDER BY TABLE_NAME, INDEX_NAME, SEQ_IN_INDEX
             `)
         ]);
 
@@ -176,6 +189,16 @@ export class MysqlAdapter implements DbAdapter {
             const fk = m.get(row.constraint_name)!;
             fk.columns.push(row.column_name);
             fk.refColumns.push(row.referenced_column_name);
+        }
+
+        // Indexes per table
+        const idxsByTable = new Map<string, Map<string, { columns: string[]; type: string }>>();
+        for (const row of idxRows as any[]) {
+            const tn = row.table_name as string;
+            if (!idxsByTable.has(tn)) idxsByTable.set(tn, new Map());
+            const m = idxsByTable.get(tn)!;
+            if (!m.has(row.index_name)) m.set(row.index_name, { columns: [], type: row.index_type as string });
+            m.get(row.index_name)!.columns.push(row.column_name);
         }
 
         // Incoming FKs per referenced table
@@ -220,13 +243,17 @@ export class MysqlAdapter implements DbAdapter {
                 comment: null
             }));
 
+            const idxMap = idxsByTable.get(name) ?? new Map<string, { columns: string[]; type: string }>();
+            const indexes: IndexMeta[] = [...idxMap.entries()].map(([idxName, v]) => ({ name: idxName, columns: v.columns, type: v.type }));
+
             return {
                 schema,
                 name,
                 columns,
                 foreignKeys: [...(fksByTable.get(name)?.values() ?? [])],
                 referencedBy: [...(refsByTable.get(name)?.values() ?? [])],
-                uniqueConstraints
+                uniqueConstraints,
+                indexes
             };
         });
     }

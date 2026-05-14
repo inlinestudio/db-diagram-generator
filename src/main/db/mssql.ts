@@ -1,4 +1,4 @@
-import type { ConnectionConfig, DiagramPayload, TableSchema, ColumnMeta, ForeignKey } from '@shared/schema';
+import type { ConnectionConfig, DiagramPayload, TableSchema, ColumnMeta, ForeignKey, IndexMeta } from '@shared/schema';
 import type { DbAdapter } from './types';
 
 type TableRef = { schema: string; name: string };
@@ -66,7 +66,7 @@ export class MssqlAdapter implements DbAdapter {
     }
 
     private async loadAllTables(refs: TableRef[]): Promise<TableSchema[]> {
-        const [colRes, pkRes, uqRes, fkRes] = await Promise.all([
+        const [colRes, pkRes, uqRes, fkRes, idxRes] = await Promise.all([
             this.req().query(
                 `SELECT c.TABLE_SCHEMA, c.TABLE_NAME, c.COLUMN_NAME,
                         c.DATA_TYPE, c.IS_NULLABLE, c.COLUMN_DEFAULT,
@@ -115,6 +115,24 @@ export class MssqlAdapter implements DbAdapter {
                                                       AND cr.column_id          = fkc.referenced_column_id
                   ORDER BY fk.name, fkc.constraint_column_id`
             ),
+            this.req().query(
+                `SELECT SCHEMA_NAME(t.schema_id) AS table_schema,
+                        t.name                   AS table_name,
+                        i.name                   AS index_name,
+                        i.type_desc              AS index_type,
+                        ic.key_ordinal,
+                        c.name                   AS column_name
+                   FROM sys.indexes i
+                   JOIN sys.index_columns ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id
+                   JOIN sys.columns c        ON c.object_id  = i.object_id AND c.column_id = ic.column_id
+                   JOIN sys.tables t         ON t.object_id  = i.object_id
+                  WHERE i.is_primary_key       = 0
+                    AND i.is_unique_constraint  = 0
+                    AND i.is_unique             = 0
+                    AND i.type                 > 0
+                    AND ic.is_included_column   = 0
+                  ORDER BY SCHEMA_NAME(t.schema_id), t.name, i.name, ic.key_ordinal`
+            ),
         ]);
 
         const colsByTable = new Map<string, any[]>();
@@ -138,6 +156,15 @@ export class MssqlAdapter implements DbAdapter {
             const m = uqsByTable.get(k)!;
             if (!m.has(r.CONSTRAINT_NAME)) m.set(r.CONSTRAINT_NAME, []);
             m.get(r.CONSTRAINT_NAME)!.push(r.COLUMN_NAME);
+        }
+
+        const idxsByTable = new Map<string, Map<string, { columns: string[]; type: string }>>();
+        for (const r of idxRes.recordset as any[]) {
+            const k = `${r.table_schema}.${r.table_name}`;
+            if (!idxsByTable.has(k)) idxsByTable.set(k, new Map());
+            const m = idxsByTable.get(k)!;
+            if (!m.has(r.index_name)) m.set(r.index_name, { columns: [], type: (r.index_type as string).toUpperCase() });
+            m.get(r.index_name)!.columns.push(r.column_name);
         }
 
         const fksByTable = new Map<string, Map<string, ForeignKey>>();
@@ -194,6 +221,9 @@ export class MssqlAdapter implements DbAdapter {
                 comment: null,
             }));
 
+            const idxMap = idxsByTable.get(k) ?? new Map<string, { columns: string[]; type: string }>();
+            const indexes: IndexMeta[] = [...idxMap.entries()].map(([idxName, v]) => ({ name: idxName, columns: v.columns, type: v.type }));
+
             return {
                 schema,
                 name,
@@ -201,6 +231,7 @@ export class MssqlAdapter implements DbAdapter {
                 foreignKeys: [...(fksByTable.get(k)?.values() ?? [])],
                 referencedBy: [...(refsByTable.get(k)?.values() ?? [])],
                 uniqueConstraints,
+                indexes,
             };
         });
     }

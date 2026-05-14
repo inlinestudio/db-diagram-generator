@@ -1,5 +1,5 @@
 import { Client } from 'pg';
-import type { ConnectionConfig, DiagramPayload, TableSchema, ColumnMeta, ForeignKey } from '@shared/schema';
+import type { ConnectionConfig, DiagramPayload, TableSchema, ColumnMeta, ForeignKey, IndexMeta } from '@shared/schema';
 import type { DbAdapter } from './types';
 
 type TableRef = { schema: string; name: string };
@@ -94,6 +94,22 @@ export class PostgresAdapter implements DbAdapter {
              WHERE con.contype = 'f' AND n.nspname NOT IN ${EXCL}
              GROUP BY n.nspname, c.relname, con.conname, rn.nspname, rc.relname, con.confdeltype, con.confupdtype`);
 
+        const idxRes = await this.c().query<{ schema: string; table_name: string; index_name: string; column_name: string; index_type: string }>(
+            `SELECT n.nspname AS schema, c.relname AS table_name, i.relname AS index_name,
+                    a.attname::text AS column_name, upper(am.amname) AS index_type
+               FROM pg_index x
+               JOIN pg_class c  ON c.oid = x.indrelid
+               JOIN pg_class i  ON i.oid = x.indexrelid
+               JOIN pg_am am    ON am.oid = i.relam
+               JOIN pg_namespace n ON n.oid = c.relnamespace
+               JOIN LATERAL unnest(x.indkey) WITH ORDINALITY AS ix(col, ord) ON true
+               JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum = ix.col
+              WHERE n.nspname NOT IN ${EXCL}
+                AND x.indisprimary = false
+                AND x.indisunique  = false
+                AND ix.col != 0
+              ORDER BY n.nspname, c.relname, i.relname, ix.ord`);
+
         const refByRes = await this.c().query<{
             tgt_schema: string; tgt_table: string;
             cols: string[]; ref_schema: string; ref_table: string; ref_cols: string[];
@@ -149,6 +165,15 @@ export class PostgresAdapter implements DbAdapter {
             });
         }
 
+        const idxsByTable = new Map<string, Map<string, { columns: string[]; type: string }>>();
+        for (const r of idxRes.rows) {
+            const k = `${r.schema}.${r.table_name}`;
+            if (!idxsByTable.has(k)) idxsByTable.set(k, new Map());
+            const m = idxsByTable.get(k)!;
+            if (!m.has(r.index_name)) m.set(r.index_name, { columns: [], type: r.index_type });
+            m.get(r.index_name)!.columns.push(r.column_name);
+        }
+
         const refBysByTable = new Map<string, ForeignKey[]>();
         for (const r of refByRes.rows) {
             const k = `${r.tgt_schema}.${r.tgt_table}`;
@@ -179,13 +204,17 @@ export class PostgresAdapter implements DbAdapter {
                 comment: null
             }));
 
+            const idxMap = idxsByTable.get(k) ?? new Map<string, { columns: string[]; type: string }>();
+            const indexes: IndexMeta[] = [...idxMap.entries()].map(([name, v]) => ({ name, columns: v.columns, type: v.type }));
+
             return {
                 schema,
                 name,
                 columns,
                 foreignKeys: fksByTable.get(k) ?? [],
                 referencedBy: refBysByTable.get(k) ?? [],
-                uniqueConstraints
+                uniqueConstraints,
+                indexes
             };
         });
     }

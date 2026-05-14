@@ -15,7 +15,8 @@ const users: TableSchema = {
         { columns: ['id'], refSchema: 'public', refTable: 'orders', refColumns: ['user_id'] },
         { columns: ['id'], refSchema: 'public', refTable: 'sessions', refColumns: ['user_id'] }
     ],
-    uniqueConstraints: [['email']]
+    uniqueConstraints: [['email']],
+    indexes: [{ name: 'idx_users_name', columns: ['name'], type: 'BTREE' }]
 };
 
 const orders: TableSchema = {
@@ -31,7 +32,11 @@ const orders: TableSchema = {
         { columns: ['user_id'], refSchema: 'public', refTable: 'users', refColumns: ['id'], onDelete: 'CASCADE' }
     ],
     referencedBy: [],
-    uniqueConstraints: [['user_id', 'status']]
+    uniqueConstraints: [['user_id', 'status']],
+    indexes: [
+        { name: 'idx_orders_status', columns: ['status'], type: 'BTREE' },
+        { name: 'idx_orders_user_created', columns: ['user_id', 'total'], type: 'BTREE' }
+    ]
 };
 
 const sessions: TableSchema = {
@@ -46,7 +51,8 @@ const sessions: TableSchema = {
         { columns: ['user_id'], refSchema: 'public', refTable: 'users', refColumns: ['id'], onDelete: 'CASCADE' }
     ],
     referencedBy: [],
-    uniqueConstraints: []
+    uniqueConstraints: [],
+    indexes: []
 };
 
 export class DemoAdapter implements DbAdapter {
