@@ -29,7 +29,7 @@
     "electron-updater": "^6.8.9",
     "html-to-image": "1.11.13",
     "mssql": "^12.7",
-    "mysql2": "^3.22",
+    "mysql2": "^3.23",
     "pg": "^8.22",
     "react": "^19.0",
     "react-dom": "^19.2",
