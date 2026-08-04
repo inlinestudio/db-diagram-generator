@@ -43,7 +43,7 @@
     "@types/node": "^25.9",
     "@types/pg": "^8.20.3",
     "@types/react": "^19.2",
-    "@types/react-dom": "^19.0",
+    "@types/react-dom": "^19.2",
     "@vitejs/plugin-react": "^5.0",
     "electron": "^42.8",
     "electron-builder": "^26.15",
